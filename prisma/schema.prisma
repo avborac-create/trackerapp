@@ -1,0 +1,93 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Tek kullanıcılı uygulama: user_id yok, tüm veriler tek çalışma alanına ait.
+
+enum Category {
+  companion
+  multi
+  active
+  passive
+}
+
+enum ExternalStatus {
+  inbox
+  not_now
+  on_agenda
+  closed
+}
+
+enum WeekState {
+  open
+  closed
+}
+
+model Node {
+  id             String         @id @default(cuid())
+  title          String
+  category       Category       @default(active)
+  externalStatus ExternalStatus @default(inbox)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  weekNodes WeekNode[]
+
+  @@map("tracker_nodes")
+}
+
+model Week {
+  id       String    @id @default(cuid())
+  startsOn DateTime
+  endsOn   DateTime
+  state    WeekState @default(open)
+
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+
+  weekNodes WeekNode[]
+
+  @@map("tracker_weeks")
+}
+
+model WeekNode {
+  id     String @id @default(cuid())
+  weekId String
+  week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  nodeId String
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  categorySnapshot Category
+  includedOn       DateTime
+  removedOn        DateTime?
+  sortOrder        Int       @default(0)
+
+  dailyMarks DailyMark[]
+
+  @@unique([weekId, nodeId])
+  @@map("tracker_week_nodes")
+}
+
+model DailyMark {
+  id         String   @id @default(cuid())
+  weekNodeId String
+  weekNode   WeekNode @relation(fields: [weekNodeId], references: [id], onDelete: Cascade)
+
+  day       DateTime
+  completed Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([weekNodeId, day])
+  @@map("tracker_daily_marks")
+}
