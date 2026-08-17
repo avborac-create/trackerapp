@@ -22,3 +22,5 @@ build
 *.pem
 npm-debug.log*
 *.tsbuildinfo
+.vercel
+.env*

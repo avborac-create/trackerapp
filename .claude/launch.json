@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "scratchpad-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4321", "--directory", "/private/tmp/claude-501/-Users-boracolakoglu-Desktop-1---Database-Claude-Local-Tracker-App/f14aa5bf-0e0a-4538-8620-94959d316ff8/scratchpad"],
+      "port": 4321
     }
   ]
 }

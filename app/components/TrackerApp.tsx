@@ -2,25 +2,45 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  addDailyMarkEntry,
   addNode,
   closeCurrentWeekAndAdvance,
+  deleteDailyMarkEntry,
   getAdjacentWeek,
   getInboxNodes,
   getOrCreateCurrentWeek,
   getWeekByIdAction,
   moveNodeToAgenda,
+  setDailyMarkStatus,
   setNodeExternalStatus,
   toggleDailyMark,
   updateNode,
 } from "@/app/lib/actions";
-import { addDaysISO, getWeekDays, getWeekStart, toISODate } from "@/app/lib/dates";
+import { addDaysISO, DAY_LABELS, getWeekDays, getWeekStart, toISODate } from "@/app/lib/dates";
 import { computeWeekStats } from "@/app/lib/stats";
-import { CATEGORY_ORDER, type Category, type ExternalStatus, type NodeDTO, type WeekDTO } from "@/app/lib/types";
+import {
+  CATEGORY_ORDER,
+  type Category,
+  type DailyMarkStatus,
+  type ExternalStatus,
+  type NodeDTO,
+  type WeekDTO,
+} from "@/app/lib/types";
 import { WeekHeader } from "@/app/components/WeekHeader";
 import { CategoryCluster } from "@/app/components/CategoryCluster";
 import { SummaryPanel } from "@/app/components/SummaryPanel";
 import { Drawer } from "@/app/components/Drawer";
 import { NodeEditPanel } from "@/app/components/NodeEditPanel";
+import { DayNoteModal } from "@/app/components/DayNoteModal";
 
 export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [ready, setReady] = useState(false);
@@ -34,6 +54,18 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingDayNote, setEditingDayNote] = useState<{ weekNodeId: string; day: string } | null>(null);
+  const [activeDragTitle, setActiveDragTitle] = useState<string | null>(null);
+  const [collapsedMap, setCollapsedMap] = useState<Record<Category, boolean>>({
+    companion: false,
+    multi: false,
+    active: false,
+    passive: false,
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
 
   useEffect(() => {
     const now = new Date();
@@ -44,6 +76,12 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     setWeekStartISO(toISODate(start));
     setWeekEndISO(toISODate(end));
     setReady(true);
+
+    const stored: Partial<Record<Category, boolean>> = {};
+    for (const cat of CATEGORY_ORDER) {
+      stored[cat] = window.localStorage.getItem(`tracker_cluster_collapsed_${cat}`) === "1";
+    }
+    setCollapsedMap((prev) => ({ ...prev, ...stored }));
   }, []);
 
   useEffect(() => {
@@ -78,52 +116,81 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const editable = week?.state === "open";
   const isCurrentWeek = week?.startsOn === weekStartISO;
 
+  function toggleClusterCollapsed(category: Category) {
+    setCollapsedMap((prev) => {
+      const next = { ...prev, [category]: !prev[category] };
+      window.localStorage.setItem(`tracker_cluster_collapsed_${category}`, next[category] ? "1" : "0");
+      return next;
+    });
+  }
+
+  function setAllClustersCollapsed(collapsed: boolean) {
+    const next: Record<Category, boolean> = {
+      companion: collapsed,
+      multi: collapsed,
+      active: collapsed,
+      passive: collapsed,
+    };
+    for (const cat of CATEGORY_ORDER) {
+      window.localStorage.setItem(`tracker_cluster_collapsed_${cat}`, collapsed ? "1" : "0");
+    }
+    setCollapsedMap(next);
+  }
+
   async function refreshInbox() {
     const nodes = await getInboxNodes();
     setInboxNodes(nodes);
+  }
+
+  function withMark(marks: Record<string, DailyMarkStatus>, day: string, status: DailyMarkStatus | null) {
+    const next = { ...marks };
+    if (status) next[day] = status;
+    else delete next[day];
+    return next;
+  }
+
+  function applyMark(weekNodeId: string, day: string, status: DailyMarkStatus | null) {
+    setWeek((w) =>
+      w
+        ? {
+            ...w,
+            weekNodes: w.weekNodes.map((x) => (x.id === weekNodeId ? { ...x, marks: withMark(x.marks, day, status) } : x)),
+          }
+        : w
+    );
   }
 
   function handleToggleDay(weekNodeId: string, day: string) {
     if (!editable || !week) return;
     const wn = week.weekNodes.find((x) => x.id === weekNodeId);
     if (!wn) return;
-    const prev = !!wn.marks[day];
-
-    setWeek((w) =>
-      w
-        ? {
-            ...w,
-            weekNodes: w.weekNodes.map((x) =>
-              x.id === weekNodeId ? { ...x, marks: { ...x.marks, [day]: !prev } } : x
-            ),
-          }
-        : w
-    );
+    const prev = wn.marks[day] ?? null;
+    const optimisticNext: DailyMarkStatus | null = prev === "done" ? null : "done";
+    applyMark(weekNodeId, day, optimisticNext);
 
     toggleDailyMark(weekNodeId, day)
       .then((result) => {
-        setWeek((w) =>
-          w
-            ? {
-                ...w,
-                weekNodes: w.weekNodes.map((x) =>
-                  x.id === weekNodeId ? { ...x, marks: { ...x.marks, [result.day]: result.completed } } : x
-                ),
-              }
-            : w
-        );
+        applyMark(weekNodeId, result.day, result.status);
       })
       .catch(() => {
-        setWeek((w) =>
-          w
-            ? {
-                ...w,
-                weekNodes: w.weekNodes.map((x) =>
-                  x.id === weekNodeId ? { ...x, marks: { ...x.marks, [day]: prev } } : x
-                ),
-              }
-            : w
-        );
+        applyMark(weekNodeId, day, prev);
+        setNotice("İşaret kaydedilemedi, tekrar dene.");
+      });
+  }
+
+  function handleSetDayStatus(weekNodeId: string, day: string, status: DailyMarkStatus | null) {
+    if (!editable || !week) return;
+    const wn = week.weekNodes.find((x) => x.id === weekNodeId);
+    if (!wn) return;
+    const prev = wn.marks[day] ?? null;
+    applyMark(weekNodeId, day, status);
+
+    setDailyMarkStatus(weekNodeId, day, status)
+      .then((result) => {
+        applyMark(weekNodeId, result.day, result.status);
+      })
+      .catch(() => {
+        applyMark(weekNodeId, day, prev);
         setNotice("İşaret kaydedilemedi, tekrar dene.");
       });
   }
@@ -191,7 +258,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     }
   }
 
-  async function handleSetStatus(nodeId: string, status: "not_now" | "closed") {
+  async function handleSetStatus(nodeId: string, status: "inbox" | "not_now" | "closed") {
     setBusy(true);
     try {
       await setNodeExternalStatus(nodeId, status, todayISO);
@@ -199,6 +266,58 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       setWeek((w) => (w ? { ...w, weekNodes: w.weekNodes.filter((x) => x.nodeId !== nodeId) } : w));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleChangeCategory(nodeId: string, category: Category) {
+    setBusy(true);
+    try {
+      await updateNode(nodeId, { category });
+      setWeek((w) =>
+        w ? { ...w, weekNodes: w.weekNodes.map((x) => (x.nodeId === nodeId ? { ...x, category } : x)) } : w
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as { title?: string } | undefined;
+    setActiveDragTitle(data?.title ?? null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragTitle(null);
+    const { active, over } = event;
+    if (!over || !editable) return;
+    const data = active.data.current as
+      | { kind: "agenda"; nodeId: string; category: Category }
+      | { kind: "drawer"; nodeId: string; status: "inbox" | "not_now" | "closed" }
+      | undefined;
+    if (!data) return;
+    const overId = String(over.id);
+
+    if (overId === "drawer-panel") {
+      if (data.kind === "drawer" && data.status === "inbox") return;
+      handleSetStatus(data.nodeId, "inbox");
+      return;
+    }
+
+    if (overId.startsWith("cluster-")) {
+      const targetCategory = overId.slice("cluster-".length) as Category;
+      if (data.kind === "agenda") {
+        if (data.category === targetCategory) return;
+        handleChangeCategory(data.nodeId, targetCategory);
+      } else {
+        handleMoveToAgenda(data.nodeId, targetCategory);
+      }
+      return;
+    }
+
+    if (overId.startsWith("drawer-")) {
+      const targetStatus = overId.slice("drawer-".length) as "inbox" | "not_now" | "closed";
+      if (data.kind === "drawer" && data.status === targetStatus) return;
+      handleSetStatus(data.nodeId, targetStatus);
     }
   }
 
@@ -212,11 +331,19 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
           title: editingFromWeek.title,
           category: editingFromWeek.category,
           externalStatus: "on_agenda",
+          notes: editingFromWeek.notes,
+          tags: editingFromWeek.tags,
           createdAt: "",
         }
       : null;
 
-  async function handleSaveEdit(patch: { title: string; category: Category; externalStatus: ExternalStatus }) {
+  async function handleSaveEdit(patch: {
+    title: string;
+    category: Category;
+    externalStatus: ExternalStatus;
+    notes: string | null;
+    tags: string[];
+  }) {
     if (!editingNode) return;
     setBusy(true);
     try {
@@ -226,10 +353,15 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       if (willBeOnAgenda && !wasOnAgenda) {
         const w = await moveNodeToAgenda(editingNode.id, patch.category, todayISO, weekStartISO, weekEndISO);
         setWeek(w);
-        if (patch.title !== editingNode.title) await updateNode(editingNode.id, { title: patch.title });
+        await updateNode(editingNode.id, { title: patch.title, notes: patch.notes, tags: patch.tags });
       } else if (!willBeOnAgenda && wasOnAgenda) {
         await setNodeExternalStatus(editingNode.id, patch.externalStatus, todayISO);
-        await updateNode(editingNode.id, { title: patch.title, category: patch.category });
+        await updateNode(editingNode.id, {
+          title: patch.title,
+          category: patch.category,
+          notes: patch.notes,
+          tags: patch.tags,
+        });
         setWeek((w) => (w ? { ...w, weekNodes: w.weekNodes.filter((x) => x.nodeId !== editingNode.id) } : w));
       } else {
         await updateNode(editingNode.id, patch);
@@ -239,7 +371,9 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
               ? {
                   ...w,
                   weekNodes: w.weekNodes.map((x) =>
-                    x.nodeId === editingNode.id ? { ...x, title: patch.title, category: patch.category } : x
+                    x.nodeId === editingNode.id
+                      ? { ...x, title: patch.title, category: patch.category, notes: patch.notes, tags: patch.tags }
+                      : x
                   ),
                 }
               : w
@@ -253,18 +387,88 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     }
   }
 
+  function handleStopNode(nodeId: string) {
+    handleSetStatus(nodeId, "not_now");
+  }
+
+  async function handleAddDayEntry(text: string) {
+    if (!editingDayNote) return;
+    const { weekNodeId, day } = editingDayNote;
+    setBusy(true);
+    try {
+      const result = await addDailyMarkEntry(weekNodeId, day, text);
+      setWeek((w) =>
+        w
+          ? {
+              ...w,
+              weekNodes: w.weekNodes.map((x) =>
+                x.id === weekNodeId
+                  ? {
+                      ...x,
+                      marks: withMark(x.marks, result.day, result.status),
+                      dayEntries: {
+                        ...x.dayEntries,
+                        [result.day]: [...(x.dayEntries[result.day] ?? []), result.entry],
+                      },
+                    }
+                  : x
+              ),
+            }
+          : w
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteDayEntry(entryId: string) {
+    if (!editingDayNote) return;
+    const { weekNodeId, day } = editingDayNote;
+    setBusy(true);
+    try {
+      await deleteDailyMarkEntry(weekNodeId, day, entryId);
+      setWeek((w) =>
+        w
+          ? {
+              ...w,
+              weekNodes: w.weekNodes.map((x) =>
+                x.id === weekNodeId
+                  ? {
+                      ...x,
+                      dayEntries: {
+                        ...x.dayEntries,
+                        [day]: (x.dayEntries[day] ?? []).filter((e) => e.id !== entryId),
+                      },
+                    }
+                  : x
+              ),
+            }
+          : w
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const dayNoteWeekNode = editingDayNote
+    ? week?.weekNodes.find((x) => x.id === editingDayNote.weekNodeId)
+    : undefined;
+  const dayNoteDayIndex = editingDayNote ? weekDays.indexOf(editingDayNote.day) : -1;
+  const dayNoteEntries = (editingDayNote && dayNoteWeekNode?.dayEntries[editingDayNote.day]) || [];
+
   if (!ready || loading || !week || !stats) {
     return (
-      <div className="mx-auto flex max-w-6xl items-center justify-center px-4 py-24 text-sm text-neutral-400">
+      <div className="mx-auto flex max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
         Yükleniyor…
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 pb-16 pt-6">
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <div className="mx-auto max-w-6xl px-4 pb-16 pt-4">
       {notice && (
-        <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+        <div className="mb-3 rounded-lg bg-[var(--route-soft)] px-3 py-2 text-xs text-[var(--route)]">
           {notice}
         </div>
       )}
@@ -272,6 +476,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       <WeekHeader
         weekStartISO={week.startsOn}
         weekEndISO={week.endsOn}
+        weekDays={weekDays}
+        todayISO={todayISO}
         isCurrentWeek={isCurrentWeek}
         isOpen={week.state === "open"}
         hasPrev
@@ -282,8 +488,24 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
         busy={busy}
       />
 
-      <div className="mt-6 grid gap-6 md:grid-cols-[1fr_320px]">
-        <div className="space-y-4">
+      <div className="mt-4 grid gap-4 md:grid-cols-[1fr_360px]">
+        <div className="space-y-2.5">
+          <div className="flex justify-end gap-1.5 px-1">
+            <button
+              type="button"
+              onClick={() => setAllClustersCollapsed(false)}
+              className="rounded-full px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            >
+              Tümünü genişlet
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllClustersCollapsed(true)}
+              className="rounded-full px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            >
+              Tümünü daralt
+            </button>
+          </div>
           {CATEGORY_ORDER.map((cat) => (
             <CategoryCluster
               key={cat}
@@ -292,10 +514,18 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
               weekDays={weekDays}
               stats={stats}
               editable={editable}
+              collapsed={collapsedMap[cat]}
+              onToggleCollapsed={() => toggleClusterCollapsed(cat)}
               onToggleDay={handleToggleDay}
+              onSetDayStatus={handleSetDayStatus}
+              onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}
               onEditNode={(weekNodeId) => {
                 const wn = week.weekNodes.find((x) => x.id === weekNodeId);
                 if (wn) setEditingNodeId(wn.nodeId);
+              }}
+              onStopNode={(weekNodeId) => {
+                const wn = week.weekNodes.find((x) => x.id === weekNodeId);
+                if (wn) handleStopNode(wn.nodeId);
               }}
             />
           ))}
@@ -303,26 +533,50 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
 
         <div className="space-y-4">
           <SummaryPanel stats={stats} />
-          <Drawer
-            nodes={inboxNodes}
-            editable={editable}
-            busy={busy}
-            onAddNode={handleAddNode}
-            onMoveToAgenda={handleMoveToAgenda}
-            onSetStatus={handleSetStatus}
-            onEditNode={(nodeId) => setEditingNodeId(nodeId)}
-          />
         </div>
+      </div>
+
+      <div className="mt-4">
+        <Drawer
+          nodes={inboxNodes}
+          editable={editable}
+          busy={busy}
+          onAddNode={handleAddNode}
+          onMoveToAgenda={handleMoveToAgenda}
+          onSetStatus={handleSetStatus}
+          onEditNode={(nodeId) => setEditingNodeId(nodeId)}
+        />
       </div>
 
       {editingNode && (
         <NodeEditPanel
+          key={editingNode.id}
           node={editingNode}
           busy={busy}
           onClose={() => setEditingNodeId(null)}
           onSave={handleSaveEdit}
         />
       )}
+
+      {editingDayNote && dayNoteWeekNode && (
+        <DayNoteModal
+          title={dayNoteWeekNode.title}
+          dayLabel={dayNoteDayIndex >= 0 ? DAY_LABELS[dayNoteDayIndex] : ""}
+          entries={dayNoteEntries}
+          busy={busy}
+          onClose={() => setEditingDayNote(null)}
+          onAdd={handleAddDayEntry}
+          onDelete={handleDeleteDayEntry}
+        />
+      )}
     </div>
+    <DragOverlay>
+      {activeDragTitle && (
+        <div className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-2 text-sm font-medium text-[var(--foreground)] shadow-lg backdrop-blur-xl backdrop-saturate-150">
+          {activeDragTitle}
+        </div>
+      )}
+    </DragOverlay>
+    </DndContext>
   );
 }

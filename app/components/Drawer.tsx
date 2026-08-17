@@ -1,7 +1,175 @@
 "use client";
 
 import { useState } from "react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_LABELS, CATEGORY_ORDER, STATUS_LABELS, type Category, type NodeDTO } from "@/app/lib/types";
+import { CATEGORY_THEME } from "@/app/lib/colors";
+
+function DrawerCard({
+  node,
+  status,
+  editable,
+  busy,
+  pickingCategory,
+  onTogglePickCategory,
+  onMoveToAgenda,
+  onSetStatus,
+  onEditNode,
+}: {
+  node: NodeDTO;
+  status: "inbox" | "not_now" | "closed";
+  editable: boolean;
+  busy: boolean;
+  pickingCategory: boolean;
+  onTogglePickCategory: () => void;
+  onMoveToAgenda: (category: Category) => void;
+  onSetStatus: (status: "closed") => void;
+  onEditNode: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `drawer-item-${node.id}`,
+    data: { kind: "drawer", nodeId: node.id, status },
+    disabled: !editable,
+  });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform) }}
+      className={`rounded-lg border border-[var(--border-subtle)] p-3 text-sm ${
+        isDragging ? "z-50 opacity-50 shadow-lg" : ""
+      }`}
+    >
+      <div className="flex w-full items-center gap-1.5">
+        {editable && (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="shrink-0 cursor-grab touch-none px-0.5 text-[var(--muted)] opacity-60 active:cursor-grabbing"
+            aria-label="Sürükle"
+            title="Sürükleyerek taşı"
+          >
+            ⠿
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onEditNode}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left font-medium text-[var(--foreground)] hover:underline"
+        >
+          <span className="truncate">{node.title}</span>
+          {node.tags.map((tag) => (
+            <span
+              key={tag}
+              className="shrink-0 rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-normal text-[var(--muted)] no-underline"
+            >
+              {tag}
+            </span>
+          ))}
+        </button>
+      </div>
+      {editable && (
+        <div className="mt-2.5 flex flex-wrap gap-1.5 text-xs">
+          {status !== "closed" && (
+            <button
+              type="button"
+              onClick={onTogglePickCategory}
+              disabled={busy}
+              className="rounded-full bg-[var(--compass-soft)] px-2.5 py-1.5 font-medium text-[var(--compass)] hover:opacity-80"
+            >
+              Gündeme al
+            </button>
+          )}
+          {status !== "closed" && (
+            <button
+              type="button"
+              onClick={() => onSetStatus("closed")}
+              disabled={busy}
+              className="rounded-full px-2.5 py-1.5 text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            >
+              Kapat
+            </button>
+          )}
+        </div>
+      )}
+
+      {pickingCategory && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {CATEGORY_ORDER.map((cat) => {
+            const theme = CATEGORY_THEME[cat];
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => onMoveToAgenda(cat)}
+                className="flex items-center gap-1.5 rounded-full border border-[var(--border-subtle)] px-2 py-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--surface-2)]"
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${theme.dot}`} aria-hidden />
+                {CATEGORY_LABELS[cat]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function DrawerColumn({
+  status,
+  items,
+  editable,
+  busy,
+  pickingCategoryFor,
+  onTogglePickCategory,
+  onMoveToAgenda,
+  onSetStatus,
+  onEditNode,
+}: {
+  status: "inbox" | "not_now" | "closed";
+  items: NodeDTO[];
+  editable: boolean;
+  busy: boolean;
+  pickingCategoryFor: string | null;
+  onTogglePickCategory: (nodeId: string) => void;
+  onMoveToAgenda: (nodeId: string, category: Category) => void;
+  onSetStatus: (nodeId: string, status: "closed") => void;
+  onEditNode: (nodeId: string) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `drawer-${status}`, disabled: !editable });
+
+  return (
+    <div ref={setNodeRef} className={`rounded-xl transition-colors ${isOver ? "ring-2 ring-[var(--border-strong)]" : ""}`}>
+      <h3 className="px-1 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+        {STATUS_LABELS[status]} ({items.length})
+      </h3>
+      {items.length === 0 ? (
+        <p className="mt-1.5 px-1 text-xs text-[var(--muted)] opacity-60">
+          {isOver ? "Buraya bırak" : "—"}
+        </p>
+      ) : (
+        <ul className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((n) => (
+            <DrawerCard
+              key={n.id}
+              node={n}
+              status={status}
+              editable={editable}
+              busy={busy}
+              pickingCategory={pickingCategoryFor === n.id}
+              onTogglePickCategory={() => onTogglePickCategory(n.id)}
+              onMoveToAgenda={(cat) => onMoveToAgenda(n.id, cat)}
+              onSetStatus={(s) => onSetStatus(n.id, s)}
+              onEditNode={() => onEditNode(n.id)}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function Drawer({
   nodes,
@@ -29,10 +197,25 @@ export function Drawer({
     { status: "closed", items: nodes.filter((n) => n.externalStatus === "closed") },
   ];
 
+  const { setNodeRef: setPanelRef, isOver: isPanelOver } = useDroppable({
+    id: "drawer-panel",
+    disabled: !editable,
+  });
+
   return (
-    <section className="rounded-2xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900">
-      <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-200">
-        Gelen Kutusu &amp; kapalı düğümler
+    <section
+      ref={setPanelRef}
+      className={`rounded-2xl border p-6 backdrop-blur-xl backdrop-saturate-150 transition-colors ${
+        isPanelOver ? "border-[var(--border-strong)] bg-[var(--surface-2)]" : "border-[var(--border-subtle)] bg-[var(--surface)]"
+      }`}
+    >
+      <h2 className="font-display text-base text-[var(--foreground)]">
+        Eylem Yönetim Paneli
+        {isPanelOver && (
+          <span className="ml-2 align-middle text-xs font-normal text-[var(--compass)]">
+            Buraya bırak → Gelen Kutusu
+          </span>
+        )}
       </h2>
 
       {editable && (
@@ -43,107 +226,43 @@ export function Drawer({
             onAddNode(title.trim());
             setTitle("");
           }}
-          className="mt-3 flex gap-2"
+          className="mt-4 flex gap-2"
         >
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Yeni düğüm adı…"
-            className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+            placeholder="Yeni eylem adı…"
+            className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--foreground)]"
           />
           <button
             type="submit"
             disabled={busy || !title.trim()}
-            className="rounded-lg bg-neutral-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+            className="rounded-lg bg-[var(--foreground)] px-4 py-2.5 text-sm font-medium text-[var(--invert)] disabled:opacity-50"
           >
             Ekle
           </button>
         </form>
       )}
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-6 space-y-6">
         {groups.map((g) => (
-          <div key={g.status}>
-            <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-              {STATUS_LABELS[g.status]} ({g.items.length})
-            </h3>
-            {g.items.length === 0 ? (
-              <p className="mt-1 text-xs text-neutral-300 dark:text-neutral-600">—</p>
-            ) : (
-              <ul className="mt-1.5 space-y-1.5">
-                {g.items.map((n) => (
-                  <li
-                    key={n.id}
-                    className="rounded-lg border border-neutral-100 p-2 text-sm dark:border-neutral-800"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onEditNode(n.id)}
-                        className="truncate text-left hover:underline"
-                      >
-                        {n.title}
-                      </button>
-                      {editable && (
-                        <div className="flex shrink-0 gap-1.5 text-xs">
-                          {g.status !== "closed" && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPickingCategoryFor(pickingCategoryFor === n.id ? null : n.id)
-                              }
-                              disabled={busy}
-                              className="rounded-full bg-emerald-50 px-2 py-1 font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-300"
-                            >
-                              Gündeme al
-                            </button>
-                          )}
-                          {g.status === "inbox" && (
-                            <button
-                              type="button"
-                              onClick={() => onSetStatus(n.id, "not_now")}
-                              disabled={busy}
-                              className="rounded-full px-2 py-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                            >
-                              Şimdi değil
-                            </button>
-                          )}
-                          {g.status !== "closed" && (
-                            <button
-                              type="button"
-                              onClick={() => onSetStatus(n.id, "closed")}
-                              disabled={busy}
-                              className="rounded-full px-2 py-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                            >
-                              Kapat
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {pickingCategoryFor === n.id && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {CATEGORY_ORDER.map((cat) => (
-                          <button
-                            key={cat}
-                            type="button"
-                            onClick={() => {
-                              onMoveToAgenda(n.id, cat);
-                              setPickingCategoryFor(null);
-                            }}
-                            className="rounded-full border border-neutral-200 px-2 py-1 text-xs text-neutral-600 hover:border-emerald-400 hover:text-emerald-700 dark:border-neutral-700 dark:text-neutral-300"
-                          >
-                            {CATEGORY_LABELS[cat]}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <DrawerColumn
+            key={g.status}
+            status={g.status}
+            items={g.items}
+            editable={editable}
+            busy={busy}
+            pickingCategoryFor={pickingCategoryFor}
+            onTogglePickCategory={(nodeId) =>
+              setPickingCategoryFor(pickingCategoryFor === nodeId ? null : nodeId)
+            }
+            onMoveToAgenda={(nodeId, cat) => {
+              onMoveToAgenda(nodeId, cat);
+              setPickingCategoryFor(null);
+            }}
+            onSetStatus={onSetStatus}
+            onEditNode={onEditNode}
+          />
         ))}
       </div>
     </section>

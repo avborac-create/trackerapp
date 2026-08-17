@@ -1,7 +1,7 @@
 export type Category = "companion" | "multi" | "active" | "passive";
 export type ExternalStatus = "inbox" | "not_now" | "on_agenda" | "closed";
 
-export const CATEGORY_ORDER: Category[] = ["companion", "multi", "active", "passive"];
+export const CATEGORY_ORDER: Category[] = ["companion", "multi", "passive", "active"];
 
 export const CATEGORY_LABELS: Record<Category, string> = {
   companion: "Eşlikçi",
@@ -11,10 +11,25 @@ export const CATEGORY_LABELS: Record<Category, string> = {
 };
 
 export const STATUS_LABELS: Record<ExternalStatus, string> = {
-  inbox: "Gelen Kutusu",
-  not_now: "Şimdi Değil",
-  on_agenda: "Gündemde",
-  closed: "Kapatıldı",
+  inbox: "📥 Gelen Kutusu",
+  not_now: "⏸️ Durduruldu",
+  on_agenda: "📌 Gündemde",
+  closed: "✅ Kapatıldı",
+};
+
+export interface DayEntry {
+  id: string;
+  text: string;
+}
+
+/** done: yapıldı. unexpected: beklenmedik engel (yüzdenin paydasından düşülür).
+ * neglected: bilinçli ihmal (paydada kalır, aleyhte sayılır). */
+export type DailyMarkStatus = "done" | "unexpected" | "neglected";
+
+export const DAILY_MARK_STATUS_LABELS: Record<DailyMarkStatus, string> = {
+  done: "Yapıldı",
+  unexpected: "Beklenmedik engel",
+  neglected: "İhmal",
 };
 
 export interface WeekNodeDTO {
@@ -22,10 +37,13 @@ export interface WeekNodeDTO {
   nodeId: string;
   title: string;
   category: Category;
+  notes: string | null;
+  tags: string[];
   includedOn: string;
   removedOn: string | null;
   sortOrder: number;
-  marks: Record<string, boolean>;
+  marks: Record<string, DailyMarkStatus>;
+  dayEntries: Record<string, DayEntry[]>;
 }
 
 export interface WeekDTO {
@@ -41,6 +59,8 @@ export interface NodeDTO {
   title: string;
   category: Category;
   externalStatus: ExternalStatus;
+  notes: string | null;
+  tags: string[];
   createdAt: string;
 }
 
@@ -70,4 +90,35 @@ export interface DashboardRow {
 export interface DashboardStats {
   months: string[];
   rows: DashboardRow[];
+}
+
+/** Depolama listesi. "calendar" artık ayrı bir liste değildir (geriye dönük tip uyumu için tutulur) — bir öğeye "date" atanınca Calendar'da kaynak listesiyle birlikte görünür. */
+export type TaskListKey = "inbox" | "task" | "buylist" | "calendar";
+
+/** Görevler panosunda yan yana/sekme olarak gösterilen listeler. */
+export const TASK_BOARD_LISTS: TaskListKey[] = ["inbox", "task", "buylist"];
+
+export const TASK_LIST_LABELS: Record<TaskListKey, string> = {
+  inbox: "Inbox",
+  task: "Task",
+  buylist: "Buylist",
+  calendar: "Calendar",
+};
+
+export interface TaskSectionDTO {
+  id: string;
+  list: TaskListKey;
+  name: string;
+  sortOrder: number;
+}
+
+export interface TaskItemDTO {
+  id: string;
+  list: TaskListKey;
+  text: string;
+  date: string | null;
+  done: boolean;
+  sortOrder: number;
+  sectionId: string | null;
+  createdAt: string;
 }

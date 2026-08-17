@@ -1,5 +1,5 @@
 import { utcDateToISO } from "@/app/lib/dates";
-import type { NodeDTO, WeekDTO, WeekNodeDTO } from "@/app/lib/types";
+import type { DailyMarkStatus, NodeDTO, WeekDTO, WeekNodeDTO } from "@/app/lib/types";
 
 type WeekNodeWithRelations = {
   id: string;
@@ -8,8 +8,12 @@ type WeekNodeWithRelations = {
   includedOn: Date;
   removedOn: Date | null;
   sortOrder: number;
-  node: { title: string };
-  dailyMarks: { day: Date; completed: boolean }[];
+  node: { title: string; notes: string | null; tags: string[] };
+  dailyMarks: {
+    day: Date;
+    status: string | null;
+    entries: { id: string; text: string }[];
+  }[];
 };
 
 type WeekWithRelations = {
@@ -21,19 +25,25 @@ type WeekWithRelations = {
 };
 
 export function toWeekNodeDTO(wn: WeekNodeWithRelations): WeekNodeDTO {
-  const marks: Record<string, boolean> = {};
+  const marks: Record<string, DailyMarkStatus> = {};
+  const dayEntries: Record<string, { id: string; text: string }[]> = {};
   for (const m of wn.dailyMarks) {
-    marks[utcDateToISO(m.day)] = m.completed;
+    const iso = utcDateToISO(m.day);
+    if (m.status) marks[iso] = m.status as DailyMarkStatus;
+    if (m.entries.length > 0) dayEntries[iso] = m.entries;
   }
   return {
     id: wn.id,
     nodeId: wn.nodeId,
     title: wn.node.title,
     category: wn.categorySnapshot as WeekNodeDTO["category"],
+    notes: wn.node.notes,
+    tags: wn.node.tags,
     includedOn: utcDateToISO(wn.includedOn),
     removedOn: wn.removedOn ? utcDateToISO(wn.removedOn) : null,
     sortOrder: wn.sortOrder,
     marks,
+    dayEntries,
   };
 }
 
@@ -52,6 +62,8 @@ export function toNodeDTO(node: {
   title: string;
   category: string;
   externalStatus: string;
+  notes: string | null;
+  tags: string[];
   createdAt: Date;
 }): NodeDTO {
   return {
@@ -59,6 +71,8 @@ export function toNodeDTO(node: {
     title: node.title,
     category: node.category as NodeDTO["category"],
     externalStatus: node.externalStatus as NodeDTO["externalStatus"],
+    notes: node.notes,
+    tags: node.tags,
     createdAt: node.createdAt.toISOString(),
   };
 }

@@ -5,6 +5,21 @@
 
 export const DAY_LABELS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"] as const;
 
+export const DAY_LABELS_FULL = [
+  "Pazartesi",
+  "Salı",
+  "Çarşamba",
+  "Perşembe",
+  "Cuma",
+  "Cumartesi",
+  "Pazar",
+] as const;
+
+/** Pazartesi=0 ... Pazar=6 sırasına göre haftanın günü indeksi. */
+export function weekdayIndex(date: Date): number {
+  return (date.getDay() + 6) % 7;
+}
+
 export function toISODate(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -49,7 +64,7 @@ export function formatWeekRange(weekStartISO: string, weekEndISO: string): strin
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-const MONTHS_TR = [
+export const MONTHS_TR = [
   "Oca",
   "Şub",
   "Mar",

@@ -2,12 +2,12 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client"
-  output   = "../app/generated/prisma"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -32,11 +32,30 @@ enum WeekState {
   closed
 }
 
+enum TaskList {
+  inbox
+  task
+  buylist
+  calendar
+}
+
+// done: yapıldı. unexpected: beklenmedik engel (hastalık, seyahat vb. — tamamlanma
+// yüzdesinin paydasından da düşülür, aleyhte sayılmaz). neglected: bilinçli ihmal
+// (paydada kalır, "yapılmadı" gibi aleyhte sayılır — ama boş bırakmaktan farklı
+// olarak niyeti kayıt altına alır).
+enum DailyMarkStatus {
+  done
+  unexpected
+  neglected
+}
+
 model Node {
   id             String         @id @default(cuid())
   title          String
   category       Category       @default(active)
   externalStatus ExternalStatus @default(inbox)
+  notes          String? // "Read me": her gün hatırlanması istenen serbest metin
+  tags           String[] @default([]) // örn. Multi için "hastane", "haciz", "araba" gibi birden çok bağlam etiketi
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -82,12 +101,57 @@ model DailyMark {
   weekNodeId String
   weekNode   WeekNode @relation(fields: [weekNodeId], references: [id], onDelete: Cascade)
 
-  day       DateTime
-  completed Boolean  @default(false)
+  day    DateTime
+  status DailyMarkStatus?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  entries DailyMarkEntry[]
+
   @@unique([weekNodeId, day])
   @@map("tracker_daily_marks")
+}
+
+model DailyMarkEntry {
+  id          String    @id @default(cuid())
+  dailyMarkId String
+  dailyMark   DailyMark @relation(fields: [dailyMarkId], references: [id], onDelete: Cascade)
+
+  text      String
+  createdAt DateTime @default(now())
+
+  @@map("tracker_daily_mark_entries")
+}
+
+// Basit, sürtünmesiz not/görev yakalama paneli: Inbox / Task / Buylist.
+// Calendar ayrı bir liste değildir — herhangi bir öğeye "date" atanınca
+// Calendar sayfasında da (kaynak listesiyle birlikte) görünür.
+model TaskItem {
+  id        String       @id @default(cuid())
+  list      TaskList     @default(inbox)
+  text      String
+  date      String? // opsiyonel YYYY-MM-DD gün etiketi — Calendar'da bu tarihin altında gösterilir
+  done      Boolean      @default(false)
+  sortOrder Int          @default(0)
+  sectionId String?
+  section   TaskSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("tracker_task_items")
+}
+
+// Todoist'teki "Kısım" (section) karşılığı: bir liste içinde öğeleri alt
+// başlıklar altında gruplamak için.
+model TaskSection {
+  id        String   @id @default(cuid())
+  list      TaskList
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  items TaskItem[]
+
+  @@map("tracker_task_sections")
 }

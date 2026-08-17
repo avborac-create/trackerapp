@@ -1,11 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { formatWeekRange } from "@/app/lib/dates";
+import { MiniCalendar } from "@/app/components/MiniCalendar";
 
 export function WeekHeader({
   weekStartISO,
   weekEndISO,
+  weekDays,
+  todayISO,
   isCurrentWeek,
   isOpen,
   hasPrev,
@@ -17,6 +19,8 @@ export function WeekHeader({
 }: {
   weekStartISO: string;
   weekEndISO: string;
+  weekDays: string[];
+  todayISO: string;
   isCurrentWeek: boolean;
   isOpen: boolean;
   hasPrev: boolean;
@@ -27,64 +31,50 @@ export function WeekHeader({
   busy: boolean;
 }) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onPrev}
-          disabled={!hasPrev || busy}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 disabled:opacity-30 dark:border-neutral-700 dark:text-neutral-300"
-          aria-label="Önceki hafta"
-        >
-          ‹
-        </button>
-        <div className="text-center">
-          <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-            {formatWeekRange(weekStartISO, weekEndISO)}
+    <header>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={!hasPrev || busy}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-strong)] text-[var(--foreground)] transition-colors hover:bg-[var(--surface-2)] disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label="Önceki hafta"
+          >
+            ‹
+          </button>
+          <div className="text-center">
+            <div className="font-display text-base text-[var(--foreground)]">
+              {formatWeekRange(weekStartISO, weekEndISO)}
+            </div>
+            <div className="text-xs text-[var(--muted)]">
+              {!isOpen ? "Geçmiş (salt okunur)" : isCurrentWeek ? "Bu hafta" : "Açık hafta"}
+            </div>
           </div>
-          <div className="text-xs text-neutral-400">
-            {!isOpen
-              ? "Geçmiş (salt okunur)"
-              : isCurrentWeek
-                ? "Bu hafta"
-                : "Açık hafta"}
-          </div>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={!hasNext || busy}
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-strong)] text-[var(--foreground)] transition-colors hover:bg-[var(--surface-2)] disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label="Sonraki hafta"
+          >
+            ›
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={!hasNext || busy}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-neutral-600 disabled:opacity-30 dark:border-neutral-700 dark:text-neutral-300"
-          aria-label="Sonraki hafta"
-        >
-          ›
-        </button>
-      </div>
 
-      <div className="flex items-center gap-2">
-        <Link
-          href="/dashboard"
-          className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-        >
-          Dashboard
-        </Link>
-        <Link
-          href="/history"
-          className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-        >
-          Hafta geçmişi
-        </Link>
         {isOpen && (
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-full bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+            className="rounded-full bg-[var(--compass)] px-4 py-1.5 text-xs font-medium text-[var(--compass-soft)] shadow-sm transition-opacity disabled:opacity-50"
           >
             Haftayı Kapat
           </button>
         )}
       </div>
+
+      <MiniCalendar weekDays={weekDays} todayISO={todayISO} />
     </header>
   );
 }

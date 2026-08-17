@@ -1,29 +1,45 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { AppBar } from "@/app/components/AppBar";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Tracker",
   description: "Haftalık alışkanlık ve gelişim takibi",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Tracker",
+  },
 };
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  // Klavye açıldığında sayfayı üstüne bindirmek yerine görünür alanı küçültür —
+  // sabit konumlu (fixed) modallerin klavyenin arkasında beyaz boşluk bırakmasını önler.
+  interactiveWidget: "resizes-content",
+};
+
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("tracker_theme");if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();`;
+
+const ACCENT_PRESETS_JSON = JSON.stringify({
+  blue: { accent: "#0a84ff", soft: "#f0f8ff" },
+  indigo: { accent: "#5e5ce6", soft: "#f2f1fd" },
+  teal: { accent: "#22b8cf", soft: "#eafbfd" },
+  pink: { accent: "#ff375f", soft: "#fff0f3" },
+  mint: { accent: "#30d158", soft: "#eefdf1" },
+});
+
+const ACCENT_INIT_SCRIPT = `(function(){try{var presets=${ACCENT_PRESETS_JSON};var k=localStorage.getItem("tracker_accent");var p=presets[k];if(p){document.documentElement.style.setProperty("--compass",p.accent);document.documentElement.style.setProperty("--compass-soft",p.soft);}}catch(e){}})();`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="tr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+    <html lang="tr" className="h-full antialiased" suppressHydrationWarning>
+      <body className="min-h-full">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: ACCENT_INIT_SCRIPT }} />
+        <AppBar />
         {children}
       </body>
     </html>
