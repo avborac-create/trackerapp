@@ -1,26 +1,180 @@
 @import "tailwindcss";
 
+/* Tailwind'in "dark:" varyantını sistem tercihi yerine bizim data-theme
+   anahtarımıza bağlar (CATEGORY_THEME'deki dark: sınıfları bu sayede
+   ThemeToggle ile birebir senkron çalışır). */
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+/* ============================================================
+   Buzlu Cam (Füme) — Apple materials kimliği
+   Dumanlı antrasit zemin (sabit gradyan) üstünde saydam/buzlu paneller.
+   "Hakim renk" (--compass) kullanıcı tarafından seçilebilir (AccentPicker);
+   tema (açık/koyu) ve hakim renk birbirinden bağımsızdır.
+   Kategori renkleri (mor/sarı/kırmızı/yeşil) bu paletten bağımsızdır.
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: linear-gradient(160deg, #eef0f3 0%, #e6e9ee 45%, #edeff2 100%);
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-2: rgba(255, 255, 255, 0.35);
+  --foreground: #1d1d1f;
+  --muted: #6e6e73;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --route: #ff3b30;
+  --route-soft: #ffe5e3;
+
+  /* Hakim renk — varsayılan Mavi. AccentPicker bu ikisini birlikte değiştirir. */
+  --compass: #0a84ff;
+  --compass-soft: #f0f8ff;
+
+  /* --surface artık saydam (cam) olduğu için "bg-[var(--foreground)]" gibi
+     ters-renk (inverted) dolgularda okunur metin rengi için ayrı, opak bir
+     karşıt renk. */
+  --invert: #ffffff;
+
+  /* Boşlukta serbestçe süzülen katmanlar (açılır menü, dropdown) için —
+     altındaki keyfi sayfa içeriğiyle karışmaması için --surface'den daha
+     opak, "neredeyse katı" bir cam. */
+  --overlay: rgba(255, 255, 255, 0.92);
+
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/*
+ * Varsayılan tema her zaman açık — sistem tercihini takip etmiyoruz (cihazlar
+ * arası tutarlılık için). Koyu tema yalnızca kullanıcı ThemeToggle ile elle
+ * seçtiğinde ("dark") devreye girer. --compass / --compass-soft burada
+ * kasıtlı olarak yeniden tanımlanmıyor: hakim renk temadan bağımsız, tek yerden
+ * (AccentPicker) yönetiliyor.
+ */
+:root[data-theme="dark"] {
+  --background: linear-gradient(160deg, #1a1a1d 0%, #2b2b30 45%, #1e1e22 100%);
+  --surface: rgba(255, 255, 255, 0.07);
+  --surface-2: rgba(255, 255, 255, 0.045);
+  --foreground: #f2f2f4;
+  --muted: #9a9aa4;
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --route: #ff453a;
+  --route-soft: rgba(255, 69, 58, 0.16);
+  --invert: #000000;
+  --overlay: rgba(28, 28, 30, 0.92);
+}
+
+* {
+  border-color: var(--border-subtle);
+}
+
+html {
+  background: var(--background);
+  height: 100%;
+  /* iOS'ta sayfa ucuna (üst/alt) kaydırınca oluşan "rubber-band" sekmesi
+     sırasında arka planın beyaz yanıp sönmesini engeller. */
+  overscroll-behavior-y: none;
 }
 
 body {
   background: var(--background);
+  background-attachment: fixed;
+  overscroll-behavior-y: none;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.011em;
+}
+
+h1,
+h2,
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+  letter-spacing: -0.015em;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--compass) 30%, transparent);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+/* Yumuşak, tutarlı geçişler — anında hissettiren ama göze batmayan */
+button,
+a {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease,
+    transform 100ms ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* Görev tamamlama "dopamin" efekti: onay işaretinin etrafında kısa bir parıltı patlaması. */
+@keyframes pop-burst {
+  0% {
+    transform: scale(0.4);
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes pop-check {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.pop-burst {
+  animation: pop-burst 480ms ease-out forwards;
+}
+
+.pop-check {
+  animation: pop-check 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* iOS Safari, odaklanılan bir input/textarea'nın yazı boyutu 16px'in altındaysa
+   otomatik olarak yakınlaştırır. Kullanıcı istediğinde kendi yakınlaştırabilir,
+   bu istenmeyen otomatik zoom'u burada engelliyoruz. */
+input,
+textarea,
+select {
+  font-size: 16px;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (min-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 0.875rem;
+  }
 }

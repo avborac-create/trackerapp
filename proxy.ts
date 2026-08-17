@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const COOKIE_NAME = "tracker_access";
-const PUBLIC_PATHS = ["/locked"];
+const PUBLIC_PATHS = ["/locked", "/icon", "/apple-icon", "/favicon.ico", "/manifest.webmanifest"];
 
 export function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;

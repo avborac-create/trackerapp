@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getDashboardStats } from "@/app/lib/actions";
 import { formatMonthLabel } from "@/app/lib/dates";
 
@@ -9,40 +8,32 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-800 dark:text-neutral-100">
-          Dashboard
-        </h1>
-        <Link
-          href="/"
-          className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
-        >
-          Bugüne dön
-        </Link>
-      </div>
+      <h1 className="mb-6 font-display text-lg text-[var(--foreground)]">
+        Dashboard
+      </h1>
 
       {rows.length === 0 ? (
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-[var(--muted)]">
           Henüz istatistik oluşturacak kadar veri yok. En az bir hafta kapatınca burada aylık
           oranlar görünecek.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-neutral-200 dark:border-neutral-800">
+        <div className="overflow-x-auto rounded-2xl border border-[var(--border-subtle)] shadow-sm">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900">
-                <th className="sticky left-0 bg-neutral-50 px-3 py-2 text-left font-medium text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300">
-                  Düğüm
+              <tr className="border-b border-[var(--border-subtle)] bg-[var(--surface-2)]">
+                <th className="sticky left-0 bg-[var(--surface-2)] px-3 py-2 text-left font-medium text-[var(--muted)]">
+                  Eylem
                 </th>
                 {months.map((m) => (
                   <th
                     key={m}
-                    className="px-3 py-2 text-right font-medium text-neutral-600 dark:text-neutral-300"
+                    className="px-3 py-2 text-right font-medium text-[var(--muted)]"
                   >
                     {formatMonthLabel(m)}
                   </th>
                 ))}
-                <th className="px-3 py-2 text-right font-medium text-neutral-600 dark:text-neutral-300">
+                <th className="px-3 py-2 text-right font-medium text-[var(--muted)]">
                   Toplam
                 </th>
               </tr>
@@ -50,21 +41,29 @@ export default async function DashboardPage() {
             <tbody>
               {rows.map((row) => {
                 const totalPercent =
-                  row.totalPossible > 0 ? Math.round((row.totalCompleted / row.totalPossible) * 100) : 0;
+                  row.totalPossible > 0
+                    ? Math.round((row.totalCompleted / row.totalPossible) * 100)
+                    : 0;
                 return (
-                  <tr key={row.nodeId} className="border-b border-neutral-100 last:border-0 dark:border-neutral-900">
-                    <td className="sticky left-0 bg-white px-3 py-2 font-medium text-neutral-800 dark:bg-neutral-950 dark:text-neutral-100">
+                  <tr
+                    key={row.nodeId}
+                    className="border-b border-[var(--border-subtle)] transition-colors last:border-0 hover:bg-[var(--surface-2)]"
+                  >
+                    <td className="sticky left-0 bg-[var(--surface)] px-3 py-2 font-medium text-[var(--foreground)]">
                       {row.title}
                     </td>
                     {months.map((m) => {
                       const cell = row.cells[m];
                       return (
-                        <td key={m} className="px-3 py-2 text-right tabular-nums text-neutral-500 dark:text-neutral-400">
+                        <td
+                          key={m}
+                          className="px-3 py-2 text-right tabular-nums text-[var(--muted)]"
+                        >
                           {cell ? `${cell.percent}%` : "–"}
                         </td>
                       );
                     })}
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-neutral-800 dark:text-neutral-100">
+                    <td className="bg-gradient-to-br from-violet-500 via-rose-500 to-emerald-500 bg-clip-text px-3 py-2 text-right font-bold tabular-nums text-transparent">
                       {totalPercent}%
                     </td>
                   </tr>

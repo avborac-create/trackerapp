@@ -52,10 +52,12 @@ export function computeWeekStats(week: WeekDTO): WeekStats {
   let topNode: { title: string; completed: number } | null = null;
 
   for (const wn of week.weekNodes) {
-    const possibleDays = possibleDaysFor(wn, weekDays);
+    // "unexpected" (beklenmedik engel) işaretli günler hem payda hem paydan
+    // tamamen çıkarılır — o gün hiç "mümkün" değilmiş gibi sayılır.
+    const possibleDays = possibleDaysFor(wn, weekDays).filter((d) => wn.marks[d] !== "unexpected");
     let completed = 0;
     for (const d of possibleDays) {
-      if (wn.marks[d]) {
+      if (wn.marks[d] === "done") {
         completed += 1;
         const dayEntry = byDay.find((x) => x.day === d);
         if (dayEntry) dayEntry.count += 1;

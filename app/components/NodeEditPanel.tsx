@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { CATEGORY_THEME } from "@/app/lib/colors";
 import {
   CATEGORY_LABELS,
   CATEGORY_ORDER,
@@ -10,7 +11,7 @@ import {
   type NodeDTO,
 } from "@/app/lib/types";
 
-const STATUS_ORDER: ExternalStatus[] = ["inbox", "not_now", "on_agenda", "closed"];
+const STATUS_ORDER: ExternalStatus[] = ["inbox", "on_agenda", "closed"];
 
 export function NodeEditPanel({
   node,
@@ -21,68 +22,141 @@ export function NodeEditPanel({
   node: NodeDTO;
   busy: boolean;
   onClose: () => void;
-  onSave: (patch: { title: string; category: Category; externalStatus: ExternalStatus }) => void;
+  onSave: (patch: {
+    title: string;
+    category: Category;
+    externalStatus: ExternalStatus;
+    notes: string | null;
+    tags: string[];
+  }) => void;
 }) {
   const [title, setTitle] = useState(node.title);
   const [category, setCategory] = useState<Category>(node.category);
   const [status, setStatus] = useState<ExternalStatus>(node.externalStatus);
+  const [notes, setNotes] = useState(node.notes ?? "");
+  const [tags, setTags] = useState<string[]>(node.tags);
+  const [tagDraft, setTagDraft] = useState("");
 
-  useEffect(() => {
-    setTitle(node.title);
-    setCategory(node.category);
-    setStatus(node.externalStatus);
-  }, [node]);
+  function commitTagDraft() {
+    const trimmed = tagDraft.trim();
+    if (trimmed && !tags.includes(trimmed)) {
+      setTags((prev) => [...prev, trimmed]);
+    }
+    setTagDraft("");
+  }
+
+  function removeTag(tag: string) {
+    setTags((prev) => prev.filter((t) => t !== tag));
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-0 md:items-center md:p-4">
-      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 dark:bg-neutral-900 md:rounded-2xl">
+    <div className="fixed inset-x-0 top-0 z-50 flex h-dvh items-end justify-center bg-black/40 p-0 backdrop-blur-sm md:items-center md:p-4">
+      <div className="max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-[var(--surface)] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl backdrop-saturate-150 md:rounded-2xl md:pb-5">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-            Düğümü düzenle
+          <h2 className="font-display text-base text-[var(--foreground)]">
+            Eylemi düzenle
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
             aria-label="Kapat"
           >
             ✕
           </button>
         </div>
 
-        <label className="mt-4 block text-xs font-medium text-neutral-500 dark:text-neutral-400">
+        <label className="mt-4 block text-xs font-medium text-[var(--muted)]">
           Ad
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+            className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
           />
         </label>
 
         <div className="mt-4">
-          <span className="block text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          <span className="block text-xs font-medium text-[var(--muted)]">
             İç kategori
           </span>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {CATEGORY_ORDER.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategory(cat)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-                  category === cat
-                    ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                    : "border border-neutral-200 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
-                }`}
-              >
-                {CATEGORY_LABELS[cat]}
-              </button>
-            ))}
+            {CATEGORY_ORDER.map((cat) => {
+              const theme = CATEGORY_THEME[cat];
+              const selected = category === cat;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategory(cat)}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                    selected
+                      ? `${theme.chipBg} ${theme.text} ring-1 ${theme.ring}`
+                      : "border border-[var(--border-subtle)] text-[var(--muted)]"
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${theme.dot}`} aria-hidden />
+                  {CATEGORY_LABELS[cat]}
+                </button>
+              );
+            })}
           </div>
         </div>
 
+        {category === "multi" && (
+          <div className="mt-4">
+            <span className="block text-xs font-medium text-[var(--muted)]">
+              Etiketler{" "}
+              <span className="font-normal opacity-70">
+                (nerede/ne zaman uygulandığını belirt — örn. hastane, haciz, araba)
+              </span>
+            </span>
+            {tags.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="flex items-center gap-1 rounded-full bg-[var(--surface-2)] py-1 pl-2.5 pr-1.5 text-xs text-[var(--foreground)]"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      aria-label={`${tag} etiketini kaldır`}
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--border-subtle)] hover:text-[var(--foreground)]"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="mt-1.5 flex gap-1.5">
+              <input
+                value={tagDraft}
+                onChange={(e) => setTagDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    commitTagDraft();
+                  }
+                }}
+                placeholder="Yeni etiket, Enter'a bas…"
+                className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
+              />
+              <button
+                type="button"
+                onClick={commitTagDraft}
+                disabled={!tagDraft.trim()}
+                className="rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-xs font-medium text-[var(--muted)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+              >
+                Ekle
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4">
-          <span className="block text-xs font-medium text-neutral-500 dark:text-neutral-400">
+          <span className="block text-xs font-medium text-[var(--muted)]">
             Dış durum
           </span>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -91,34 +165,58 @@ export function NodeEditPanel({
                 key={s}
                 type="button"
                 onClick={() => setStatus(s)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                   status === s
-                    ? "bg-emerald-600 text-white"
-                    : "border border-neutral-200 text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                    ? "bg-[var(--foreground)] text-[var(--invert)]"
+                    : "border border-[var(--border-subtle)] text-[var(--muted)]"
                 }`}
               >
                 {STATUS_LABELS[s]}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-[11px] text-neutral-400">
-            Silme yerine düğümü &quot;Kapatıldı&quot; yapman önerilir.
+          <p className="mt-1.5 text-[11px] text-[var(--muted)] opacity-80">
+            Silme yerine eylemi &quot;Kapatıldı&quot; yapman önerilir.
           </p>
         </div>
+
+        <label className="mt-4 block text-xs font-medium text-[var(--muted)]">
+          Read me{" "}
+          <span className="font-normal text-[var(--muted)] opacity-70">
+            (her gün hatırlaman gereken şeyler)
+          </span>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={4}
+            placeholder="Örn. neden yaptığını, nasıl yapman gerektiğini ya da kendine bir notu buraya yaz…"
+            className="mt-1 w-full resize-none rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
+          />
+        </label>
 
         <div className="mt-6 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-3 py-2 text-sm text-neutral-500"
+            className="rounded-lg px-3 py-2 text-sm text-[var(--muted)] hover:bg-[var(--surface-2)]"
           >
             Vazgeç
           </button>
           <button
             type="button"
             disabled={busy || !title.trim()}
-            onClick={() => onSave({ title: title.trim(), category, externalStatus: status })}
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+            onClick={() => {
+              const trimmedDraft = tagDraft.trim();
+              const finalTags = trimmedDraft && !tags.includes(trimmedDraft) ? [...tags, trimmedDraft] : tags;
+              onSave({
+                title: title.trim(),
+                category,
+                externalStatus: status,
+                notes: notes.trim() ? notes.trim() : null,
+                tags: finalTags,
+              });
+            }}
+            className="rounded-lg bg-[var(--foreground)] px-4 py-2 text-sm font-medium text-[var(--invert)] shadow-sm disabled:opacity-50"
           >
             Kaydet
           </button>

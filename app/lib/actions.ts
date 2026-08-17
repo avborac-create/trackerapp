@@ -3,15 +3,18 @@
 import { prisma } from "@/app/lib/prisma";
 import { isoToUTCDate, utcDateToISO } from "@/app/lib/dates";
 import { toNodeDTO, toWeekDTO } from "@/app/lib/serialize";
-import type { Category, ExternalStatus } from "@/app/generated/prisma/client";
-import type { DashboardStats, NodeDTO, WeekDTO, WeekHistoryEntryDTO } from "@/app/lib/types";
+import type { Category, ExternalStatus } from "@prisma/client";
+import type { DailyMarkStatus, DashboardStats, NodeDTO, WeekDTO, WeekHistoryEntryDTO } from "@/app/lib/types";
 import { computeWeekStats } from "@/app/lib/stats";
 
 const WEEK_INCLUDE = {
   weekNodes: {
     where: { removedOn: null },
     orderBy: { sortOrder: "asc" as const },
-    include: { node: true, dailyMarks: true },
+    include: {
+      node: true,
+      dailyMarks: { include: { entries: { orderBy: { createdAt: "asc" as const } } } },
+    },
   },
 };
 
@@ -19,7 +22,7 @@ const WEEK_INCLUDE = {
  * İstemcinin yerel "bugün"üne göre mevcut haftayı getirir; yoksa oluşturur.
  * Açık bir hafta varsa ama başlangıcı istenenden eskiyse (yeni takvim
  * haftasına geçilmiş demektir) eski haftayı kapatıp yenisini açar ve
- * Gündemde düğümleri yeni haftaya taşır.
+ * Gündemde eylemleri yeni haftaya taşır.
  */
 export async function getOrCreateCurrentWeek(
   weekStartISO: string,
@@ -119,7 +122,7 @@ export async function getWeekHistory(): Promise<WeekHistoryEntryDTO[]> {
 }
 
 /**
- * Düğüm bazlı aylık tamamlanma tablosu (tüm haftalar üzerinden pivot görünüm).
+ * Eylem bazlı aylık tamamlanma tablosu (tüm haftalar üzerinden pivot görünüm).
  * Google Sheets V2 PRD'sindeki "Dashboard" sekmesinin karşılığı.
  */
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -189,7 +192,13 @@ export async function addNode(title: string): Promise<NodeDTO> {
 
 export async function updateNode(
   nodeId: string,
-  data: { title?: string; category?: Category; externalStatus?: ExternalStatus }
+  data: {
+    title?: string;
+    category?: Category;
+    externalStatus?: ExternalStatus;
+    notes?: string | null;
+    tags?: string[];
+  }
 ): Promise<NodeDTO> {
   const patch: Record<string, unknown> = {};
   if (data.title !== undefined) {
@@ -199,6 +208,13 @@ export async function updateNode(
   }
   if (data.category !== undefined) patch.category = data.category;
   if (data.externalStatus !== undefined) patch.externalStatus = data.externalStatus;
+  if (data.notes !== undefined) {
+    const trimmedNotes = data.notes?.trim();
+    patch.notes = trimmedNotes ? trimmedNotes : null;
+  }
+  if (data.tags !== undefined) {
+    patch.tags = data.tags.map((t) => t.trim()).filter(Boolean);
+  }
 
   const node = await prisma.node.update({ where: { id: nodeId }, data: patch });
 
@@ -216,7 +232,7 @@ export async function updateNode(
   return toNodeDTO(node);
 }
 
-/** PRD akış B: düğümü Gündemde'ye alıp mevcut haftaya dahil eder. */
+/** PRD akış B: eylemi Gündemde'ye alıp mevcut haftaya dahil eder. */
 export async function moveNodeToAgenda(
   nodeId: string,
   category: Category,
@@ -238,16 +254,34 @@ export async function moveNodeToAgenda(
     where: { weekId: week.id, nodeId, removedOn: null },
   });
   if (!already) {
-    const count = await prisma.weekNode.count({ where: { weekId: week.id } });
-    await prisma.weekNode.create({
-      data: {
-        weekId: week.id,
-        nodeId,
-        categorySnapshot: category,
-        includedOn: isoToUTCDate(todayISO),
-        sortOrder: count,
-      },
+    // [weekId, nodeId] tekil olduğu için, bu hafta içinde daha önce çıkarılmış
+    // (removedOn dolu) bir kayıt varsa yeni satır oluşturmak yerine onu yeniden
+    // etkinleştiriyoruz.
+    const removedEarlier = await prisma.weekNode.findUnique({
+      where: { weekId_nodeId: { weekId: week.id, nodeId } },
     });
+    const count = await prisma.weekNode.count({ where: { weekId: week.id } });
+    if (removedEarlier) {
+      await prisma.weekNode.update({
+        where: { id: removedEarlier.id },
+        data: {
+          categorySnapshot: category,
+          includedOn: isoToUTCDate(todayISO),
+          removedOn: null,
+          sortOrder: count,
+        },
+      });
+    } else {
+      await prisma.weekNode.create({
+        data: {
+          weekId: week.id,
+          nodeId,
+          categorySnapshot: category,
+          includedOn: isoToUTCDate(todayISO),
+          sortOrder: count,
+        },
+      });
+    }
   }
 
   const full = await prisma.week.findUniqueOrThrow({
@@ -257,7 +291,7 @@ export async function moveNodeToAgenda(
   return toWeekDTO(full);
 }
 
-/** Düğümü mevcut açık haftadan çıkarır (dış durum değişince kullanılır). */
+/** Eylemi mevcut açık haftadan çıkarır (dış durum değişince kullanılır). */
 async function removeNodeFromOpenWeek(nodeId: string, todayISO: string) {
   const openWeek = await prisma.week.findFirst({ where: { state: "open" } });
   if (!openWeek) return;
@@ -282,23 +316,87 @@ export async function setNodeExternalStatus(
   return toNodeDTO(node);
 }
 
+/** Hızlı işaretleme: boş ↔ yapıldı arasında geçiş yapar (önceki durum
+ * "beklenmedik"/"ihmal" olsa bile tek tıkla "yapıldı"ya geçer). Belirli bir
+ * durum atamak için setDailyMarkStatus kullanılır. */
 export async function toggleDailyMark(
   weekNodeId: string,
   dayISO: string
-): Promise<{ day: string; completed: boolean }> {
+): Promise<{ day: string; status: DailyMarkStatus | null }> {
   const day = isoToUTCDate(dayISO);
   const existing = await prisma.dailyMark.findUnique({
     where: { weekNodeId_day: { weekNodeId, day } },
   });
 
+  const nextStatus: DailyMarkStatus | null = existing?.status === "done" ? null : "done";
+
   const mark = existing
     ? await prisma.dailyMark.update({
         where: { id: existing.id },
-        data: { completed: !existing.completed },
+        data: { status: nextStatus },
       })
     : await prisma.dailyMark.create({
-        data: { weekNodeId, day, completed: true },
+        data: { weekNodeId, day, status: nextStatus },
       });
 
-  return { day: utcDateToISO(mark.day), completed: mark.completed };
+  return { day: utcDateToISO(mark.day), status: mark.status };
+}
+
+/** Belirli bir günü açıkça "yapıldı" / "beklenmedik engel" / "ihmal" / boş
+ * olarak işaretler (status=null → boş). */
+export async function setDailyMarkStatus(
+  weekNodeId: string,
+  dayISO: string,
+  status: DailyMarkStatus | null
+): Promise<{ day: string; status: DailyMarkStatus | null }> {
+  const day = isoToUTCDate(dayISO);
+  const mark = await prisma.dailyMark.upsert({
+    where: { weekNodeId_day: { weekNodeId, day } },
+    update: { status },
+    create: { weekNodeId, day, status },
+  });
+  return { day: utcDateToISO(mark.day), status: mark.status };
+}
+
+/**
+ * O gün için ayrı bir uygulama kaydı ekler (aynı gün birden çok kez uygulanmış
+ * olabilir, her biri kendi kaydıyla sayılır). Kayıt eklenince gün otomatik
+ * tamamlandı sayılır.
+ */
+export async function addDailyMarkEntry(
+  weekNodeId: string,
+  dayISO: string,
+  text: string
+): Promise<{ day: string; status: DailyMarkStatus | null; entry: { id: string; text: string } }> {
+  const trimmed = text.trim();
+  const day = isoToUTCDate(dayISO);
+
+  const mark = await prisma.dailyMark.upsert({
+    where: { weekNodeId_day: { weekNodeId, day } },
+    update: { status: "done" },
+    create: { weekNodeId, day, status: "done" },
+  });
+
+  const entry = await prisma.dailyMarkEntry.create({
+    data: { dailyMarkId: mark.id, text: trimmed },
+  });
+
+  return {
+    day: utcDateToISO(mark.day),
+    status: mark.status,
+    entry: { id: entry.id, text: entry.text },
+  };
+}
+
+export async function deleteDailyMarkEntry(
+  weekNodeId: string,
+  dayISO: string,
+  entryId: string
+): Promise<{ day: string }> {
+  const day = isoToUTCDate(dayISO);
+  const mark = await prisma.dailyMark.findUnique({ where: { weekNodeId_day: { weekNodeId, day } } });
+  if (mark) {
+    await prisma.dailyMarkEntry.deleteMany({ where: { id: entryId, dailyMarkId: mark.id } });
+  }
+  return { day: dayISO };
 }
