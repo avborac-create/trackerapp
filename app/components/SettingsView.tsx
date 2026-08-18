@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  DAY_BADGE_KEY,
+  getDayBadgeStyle,
+  getHabitsViewMode,
+  HABITS_VIEW_KEY,
+  type DayBadgeStyle,
+  type HabitsViewMode,
+} from "@/app/lib/prefs";
 
 type Theme = "light" | "dark";
 const THEME_KEY = "tracker_theme";
@@ -28,11 +36,25 @@ function getInitialAccent(): AccentKey {
 export function SettingsView() {
   const [theme, setTheme] = useState<Theme | null>(null);
   const [accent, setAccent] = useState<AccentKey | null>(null);
+  const [habitsView, setHabitsView] = useState<HabitsViewMode | null>(null);
+  const [dayBadge, setDayBadge] = useState<DayBadgeStyle | null>(null);
 
   useEffect(() => {
     setTheme(getInitialTheme());
     setAccent(getInitialAccent());
+    setHabitsView(getHabitsViewMode());
+    setDayBadge(getDayBadgeStyle());
   }, []);
+
+  function chooseHabitsView(v: HabitsViewMode) {
+    window.localStorage.setItem(HABITS_VIEW_KEY, v);
+    setHabitsView(v);
+  }
+
+  function chooseDayBadge(v: DayBadgeStyle) {
+    window.localStorage.setItem(DAY_BADGE_KEY, v);
+    setDayBadge(v);
+  }
 
   function chooseTheme(t: Theme) {
     document.documentElement.setAttribute("data-theme", t);
@@ -47,7 +69,7 @@ export function SettingsView() {
     setAccent(preset.key);
   }
 
-  if (!theme || !accent) {
+  if (!theme || !accent || !habitsView || !dayBadge) {
     return <div className="mx-auto max-w-2xl px-4 py-8" />;
   }
 
@@ -114,6 +136,76 @@ export function SettingsView() {
               <span className="text-[11px] font-medium text-[var(--muted)]">{p.label}</span>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 backdrop-blur-xl backdrop-saturate-150">
+        <h2 className="font-display text-base text-[var(--foreground)]">Habits Görünümü</h2>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Haftalık alışkanlık listesinin ekranda nasıl gösterileceğini seç.
+        </p>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => chooseHabitsView("table")}
+            aria-pressed={habitsView === "table"}
+            className={`flex-1 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors ${
+              habitsView === "table"
+                ? "border-[var(--compass)] bg-[var(--compass-soft)] text-[var(--compass)]"
+                : "border-[var(--border-subtle)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            }`}
+          >
+            Sıkı Tablo
+            <span className="mt-0.5 block text-[11px] font-normal opacity-80">Tüm hafta tek tabloda, en yoğun görünüm.</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseHabitsView("strip")}
+            aria-pressed={habitsView === "strip"}
+            className={`flex-1 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors ${
+              habitsView === "strip"
+                ? "border-[var(--compass)] bg-[var(--compass-soft)] text-[var(--compass)]"
+                : "border-[var(--border-subtle)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            }`}
+          >
+            Mini Şerit
+            <span className="mt-0.5 block text-[11px] font-normal opacity-80">Satır satır özet, dokununca haftası açılır.</span>
+          </button>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-5 backdrop-blur-xl backdrop-saturate-150">
+        <h2 className="font-display text-base text-[var(--foreground)]">Kayıt Sayacı</h2>
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Bir günde birden çok kayıt varsa bu sayı günün kutucuğunda nasıl gösterilsin.
+        </p>
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => chooseDayBadge("number")}
+            aria-pressed={dayBadge === "number"}
+            className={`flex-1 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors ${
+              dayBadge === "number"
+                ? "border-[var(--compass)] bg-[var(--compass-soft)] text-[var(--compass)]"
+                : "border-[var(--border-subtle)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            }`}
+          >
+            Sayı öncelikli
+            <span className="mt-0.5 block text-[11px] font-normal opacity-80">Kayıt varsa sayı büyük gösterilir.</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseDayBadge("corner")}
+            aria-pressed={dayBadge === "corner"}
+            className={`flex-1 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors ${
+              dayBadge === "corner"
+                ? "border-[var(--compass)] bg-[var(--compass-soft)] text-[var(--compass)]"
+                : "border-[var(--border-subtle)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+            }`}
+          >
+            İçeride köşe
+            <span className="mt-0.5 block text-[11px] font-normal opacity-80">Durum ikonu kalır, sayı küçük köşede.</span>
+          </button>
         </div>
       </section>
 
