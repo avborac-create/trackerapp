@@ -10,6 +10,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
 import {
   addDailyMarkEntry,
   addNode,
@@ -20,6 +21,7 @@ import {
   getOrCreateCurrentWeek,
   getWeekByIdAction,
   moveNodeToAgenda,
+  reorderWeekNodesBulk,
   setDailyMarkStatus,
   setNodeExternalStatus,
   toggleDailyMark,
@@ -36,11 +38,14 @@ import {
   type WeekDTO,
 } from "@/app/lib/types";
 import { WeekHeader } from "@/app/components/WeekHeader";
-import { CategoryCluster } from "@/app/components/CategoryCluster";
 import { SummaryPanel } from "@/app/components/SummaryPanel";
 import { Drawer } from "@/app/components/Drawer";
 import { NodeEditPanel } from "@/app/components/NodeEditPanel";
 import { DayNoteModal } from "@/app/components/DayNoteModal";
+import { HabitsSubNav } from "@/app/components/HabitsSubNav";
+import { HabitsTable } from "@/app/components/HabitsTable";
+import { HabitsStrip } from "@/app/components/HabitsStrip";
+import { getDayBadgeStyle, getHabitsViewMode, type DayBadgeStyle, type HabitsViewMode } from "@/app/lib/prefs";
 
 export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [ready, setReady] = useState(false);
@@ -62,6 +67,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     active: false,
     passive: false,
   });
+  const [habitsView, setHabitsView] = useState<HabitsViewMode>("table");
+  const [dayBadgeStyle, setDayBadgeStyle] = useState<DayBadgeStyle>("corner");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -82,6 +89,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       stored[cat] = window.localStorage.getItem(`tracker_cluster_collapsed_${cat}`) === "1";
     }
     setCollapsedMap((prev) => ({ ...prev, ...stored }));
+    setHabitsView(getHabitsViewMode());
+    setDayBadgeStyle(getDayBadgeStyle());
   }, []);
 
   useEffect(() => {
@@ -286,6 +295,33 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     setActiveDragTitle(data?.title ?? null);
   }
 
+  async function handleReorderWeekNodes(category: Category, activeWeekNodeId: string, targetWeekNodeId: string) {
+    if (!week) return;
+    const categoryNodes = week.weekNodes
+      .filter((wn) => wn.category === category)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const oldIndex = categoryNodes.findIndex((wn) => wn.id === activeWeekNodeId);
+    const newIndex = categoryNodes.findIndex((wn) => wn.id === targetWeekNodeId);
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+    const reordered = arrayMove(categoryNodes, oldIndex, newIndex);
+    const sortOrders = categoryNodes.map((wn) => wn.sortOrder).sort((a, b) => a - b);
+    const prevWeek = week;
+
+    setWeek((w) =>
+      w
+        ? {
+            ...w,
+            weekNodes: w.weekNodes.map((wn) => {
+              const idx = reordered.findIndex((r) => r.id === wn.id);
+              return idx === -1 ? wn : { ...wn, sortOrder: sortOrders[idx] };
+            }),
+          }
+        : w
+    );
+    await reorderWeekNodesBulk(reordered.map((wn) => wn.id)).catch(() => setWeek(prevWeek));
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragTitle(null);
     const { active, over } = event;
@@ -318,6 +354,20 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       const targetStatus = overId.slice("drawer-".length) as "inbox" | "not_now" | "closed";
       if (data.kind === "drawer" && data.status === targetStatus) return;
       handleSetStatus(data.nodeId, targetStatus);
+      return;
+    }
+
+    if (overId.startsWith("agenda-") && data.kind === "agenda") {
+      const activeWeekNodeId = String(active.id).slice("agenda-".length);
+      const targetWeekNodeId = overId.slice("agenda-".length);
+      if (activeWeekNodeId === targetWeekNodeId) return;
+      const targetNode = week?.weekNodes.find((wn) => wn.id === targetWeekNodeId);
+      if (!targetNode) return;
+      if (targetNode.category === data.category) {
+        handleReorderWeekNodes(data.category, activeWeekNodeId, targetWeekNodeId);
+      } else {
+        handleChangeCategory(data.nodeId, targetNode.category);
+      }
     }
   }
 
@@ -458,7 +508,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
 
   if (!ready || loading || !week || !stats) {
     return (
-      <div className="mx-auto flex max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
+      <div className="mx-auto flex min-h-[60dvh] max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
         Yükleniyor…
       </div>
     );
@@ -472,6 +522,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
           {notice}
         </div>
       )}
+
+      <HabitsSubNav />
 
       <WeekHeader
         weekStartISO={week.startsOn}
@@ -506,29 +558,31 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
               Tümünü daralt
             </button>
           </div>
-          {CATEGORY_ORDER.map((cat) => (
-            <CategoryCluster
-              key={cat}
-              category={cat}
-              weekNodes={week.weekNodes.filter((wn) => wn.category === cat)}
-              weekDays={weekDays}
-              stats={stats}
-              editable={editable}
-              collapsed={collapsedMap[cat]}
-              onToggleCollapsed={() => toggleClusterCollapsed(cat)}
-              onToggleDay={handleToggleDay}
-              onSetDayStatus={handleSetDayStatus}
-              onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}
-              onEditNode={(weekNodeId) => {
-                const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                if (wn) setEditingNodeId(wn.nodeId);
-              }}
-              onStopNode={(weekNodeId) => {
-                const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                if (wn) handleStopNode(wn.nodeId);
-              }}
-            />
-          ))}
+          {(() => {
+            const HabitsView = habitsView === "strip" ? HabitsStrip : HabitsTable;
+            return (
+              <HabitsView
+                week={week}
+                weekDays={weekDays}
+                stats={stats}
+                editable={editable}
+                badgeStyle={dayBadgeStyle}
+                collapsedMap={collapsedMap}
+                onToggleCollapsed={toggleClusterCollapsed}
+                onToggleDay={handleToggleDay}
+                onSetDayStatus={handleSetDayStatus}
+                onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}
+                onEditNode={(weekNodeId) => {
+                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
+                  if (wn) setEditingNodeId(wn.nodeId);
+                }}
+                onStopNode={(weekNodeId) => {
+                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
+                  if (wn) handleStopNode(wn.nodeId);
+                }}
+              />
+            );
+          })()}
         </div>
 
         <div className="space-y-4">

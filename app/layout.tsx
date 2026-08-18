@@ -35,8 +35,8 @@ const ACCENT_INIT_SCRIPT = `(function(){try{var presets=${ACCENT_PRESETS_JSON};v
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="tr" className="h-full antialiased" suppressHydrationWarning>
-      <body className="min-h-full">
+    <html lang="tr" className="min-h-dvh antialiased" suppressHydrationWarning>
+      <body className="min-h-dvh">
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: ACCENT_INIT_SCRIPT }} />
         <AppBar />

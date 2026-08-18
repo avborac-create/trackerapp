@@ -3,83 +3,42 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-const HABITS_SUBNAV = [
-  { href: "/", label: "Bugün" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/history", label: "Geçmiş" },
+
+const HABITS_PATHS = new Set(["/", "/dashboard", "/history"]);
+
+// Görevler ve Calendar şimdilik kapalı — kullanıcı isteğiyle yalnızca Habits'e
+// odaklanılıyor. Sayfaların kendisi silinmedi, sadece nav'dan gizlendi; ileride
+// tek satırla geri eklenebilir.
+const NAV_ITEMS = [
+  { href: "/", label: "Habits", isActive: (p: string) => HABITS_PATHS.has(p) },
+  { href: "/settings", label: "Ayarlar", isActive: (p: string) => p === "/settings" },
 ];
-
-const HABITS_PATHS = new Set(HABITS_SUBNAV.map((i) => i.href));
-
-const TOP_NAV = [
-  { href: "/tasks", label: "Görevler" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/settings", label: "Ayarlar" },
-];
-
-function HabitsMenu({ pathname }: { pathname: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const active = HABITS_PATHS.has(pathname);
-
-  useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-          active
-            ? "bg-[var(--foreground)] text-[var(--invert)]"
-            : "text-[var(--muted)] hover:bg-[var(--surface-2)]"
-        }`}
-      >
-        Habits
-        <span aria-hidden className={`text-[9px] transition-transform ${open ? "rotate-180" : ""}`}>
-          ▾
-        </span>
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute left-0 top-full z-50 mt-1.5 min-w-36 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--overlay)] p-1 shadow-xl backdrop-blur-xl backdrop-saturate-150"
-        >
-          {HABITS_SUBNAV.map((item) => {
-            const itemActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className={`block rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  itemActive
-                    ? "bg-[var(--surface-2)] text-[var(--foreground)]"
-                    : "text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function AppBar() {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+  const [indicator, setIndicator] = useState<{ left: number; top: number; width: number; height: number } | null>(
+    null
+  );
+
+  useEffect(() => {
+    function measure() {
+      const nav = navRef.current;
+      if (!nav) return;
+      const activeEl = nav.querySelector<HTMLElement>('[data-active="true"]');
+      if (activeEl) {
+        setIndicator({
+          left: activeEl.offsetLeft,
+          top: activeEl.offsetTop,
+          width: activeEl.offsetWidth,
+          height: activeEl.offsetHeight,
+        });
+      }
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [pathname]);
 
   if (pathname === "/locked") return null;
 
@@ -104,18 +63,23 @@ export function AppBar() {
           </span>
         </Link>
 
-        <nav className="flex flex-wrap items-center gap-1">
-          <HabitsMenu pathname={pathname} />
-          {TOP_NAV.map((item) => {
-            const active = pathname === item.href;
+        <nav ref={navRef} className="relative flex flex-wrap items-center gap-1">
+          {indicator && (
+            <span
+              aria-hidden
+              className="absolute rounded-full bg-[var(--foreground)] transition-all duration-300 ease-out"
+              style={{ left: indicator.left, top: indicator.top, width: indicator.width, height: indicator.height }}
+            />
+          )}
+          {NAV_ITEMS.map((item) => {
+            const active = item.isActive(pathname);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                  active
-                    ? "bg-[var(--foreground)] text-[var(--invert)]"
-                    : "text-[var(--muted)] hover:bg-[var(--surface-2)]"
+                data-active={active}
+                className={`relative z-10 shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-300 ${
+                  active ? "text-[var(--invert)]" : "text-[var(--muted)] hover:bg-[var(--surface-2)]"
                 }`}
               >
                 {item.label}

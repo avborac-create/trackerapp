@@ -232,6 +232,18 @@ export async function updateNode(
   return toNodeDTO(node);
 }
 
+/** Sürükle-bırak ile bir kategori içindeki eylem kartlarını yeniden sıralar —
+ * verilen weekNode id listesinin mevcut sortOrder değerlerini korur, sadece
+ * bu küme içindeki dağılımını yeni sıraya göre yeniden atar. */
+export async function reorderWeekNodesBulk(orderedWeekNodeIds: string[]): Promise<void> {
+  if (orderedWeekNodeIds.length < 2) return;
+  const nodes = await prisma.weekNode.findMany({ where: { id: { in: orderedWeekNodeIds } } });
+  const sortOrders = nodes.map((n) => n.sortOrder).sort((a, b) => a - b);
+  await prisma.$transaction(
+    orderedWeekNodeIds.map((id, i) => prisma.weekNode.update({ where: { id }, data: { sortOrder: sortOrders[i] } }))
+  );
+}
+
 /** PRD akış B: eylemi Gündemde'ye alıp mevcut haftaya dahil eder. */
 export async function moveNodeToAgenda(
   nodeId: string,

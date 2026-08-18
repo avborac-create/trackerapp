@@ -3,14 +3,17 @@
 import { useMemo, useRef, useState } from "react";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { addTaskItem, deleteTaskItem, reorderTaskItemsBulk, toggleTaskItem } from "@/app/lib/taskActions";
+import { addTaskItem, deleteTaskItem, reorderTaskItemsBulk, toggleTaskItem, updateTaskItemDate } from "@/app/lib/taskActions";
 import { playCompletionChime } from "@/app/lib/sound";
 import {
   addDaysISO,
@@ -131,19 +134,18 @@ function SortableItemRow(props: ItemRowBaseProps) {
 }
 
 function DayItemList({
+  dayId,
   items,
   onToggle,
   onDelete,
-  onReorderBulk,
 }: {
+  dayId: string;
   items: TaskItemDTO[];
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
-  onReorderBulk: (orderedIds: string[]) => void;
 }) {
   const [showDone, setShowDone] = useState(false);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 200, tolerance: 8 } }));
-  if (items.length === 0) return null;
+  const { setNodeRef, isOver } = useDroppable({ id: dayId });
 
   const activeItems = items.filter((item) => !item.done);
   const doneItems = items.filter((item) => item.done);
@@ -156,28 +158,22 @@ function DayItemList({
     };
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = activeItems.findIndex((i) => i.id === active.id);
-    const newIndex = activeItems.findIndex((i) => i.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    onReorderBulk(arrayMove(activeItems, oldIndex, newIndex).map((i) => i.id));
-  }
-
   return (
-    <div className="mt-1.5">
-      {activeItems.length > 0 && (
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <SortableContext items={activeItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-            <ul>
-              {activeItems.map((item) => (
-                <SortableItemRow key={item.id} {...rowProps(item)} />
-              ))}
-            </ul>
-          </SortableContext>
-        </DndContext>
-      )}
+    <div
+      ref={setNodeRef}
+      className={`mt-1.5 min-h-[2rem] rounded-lg transition-colors ${isOver ? "bg-[var(--compass)]/10" : ""}`}
+    >
+      <SortableContext items={activeItems.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+        {activeItems.length > 0 ? (
+          <ul>
+            {activeItems.map((item) => (
+              <SortableItemRow key={item.id} {...rowProps(item)} />
+            ))}
+          </ul>
+        ) : (
+          isOver && <div className="h-8 rounded-lg border-2 border-dashed border-[var(--compass)]" />
+        )}
+      </SortableContext>
       {doneItems.length > 0 && (
         <div>
           <button
@@ -324,6 +320,43 @@ export function CalendarView({ initialItems }: { initialItems: TaskItemDTO[] }) 
     await reorderTaskItemsBulk(orderedIds).catch(() => setItems(prevItems));
   }
 
+  async function handleChangeDate(id: string, date: string) {
+    const prevItems = items;
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, date } : i)));
+    await updateTaskItemDate(id, date).catch(() => setItems(prevItems));
+  }
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 200, tolerance: 8 } }));
+  const [activeDragItem, setActiveDragItem] = useState<TaskItemDTO | null>(null);
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragItem(items.find((i) => i.id === event.active.id) ?? null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragItem(null);
+    const { active, over } = event;
+    if (!over) return;
+    const activeItem = items.find((i) => i.id === active.id);
+    if (!activeItem) return;
+
+    const overId = String(over.id);
+    const targetDate = overId.startsWith("day-") ? overId.slice(4) : items.find((i) => i.id === overId)?.date;
+    if (!targetDate) return;
+
+    if (targetDate === activeItem.date) {
+      if (overId.startsWith("day-")) return;
+      const dayActive = itemsForDate(targetDate).filter((i) => !i.done);
+      const oldIndex = dayActive.findIndex((i) => i.id === active.id);
+      const newIndex = dayActive.findIndex((i) => i.id === overId);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      handleReorderBulk(arrayMove(dayActive, oldIndex, newIndex).map((i) => i.id));
+      return;
+    }
+
+    handleChangeDate(activeItem.id, targetDate);
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 pb-16 pt-4">
       <h1 className="font-display text-lg text-[var(--foreground)]">Calendar</h1>
@@ -389,25 +422,34 @@ export function CalendarView({ initialItems }: { initialItems: TaskItemDTO[] }) 
       </button>
 
       {/* Tarihe göre gruplanmış gündem (Task + Buylist + tarihli Inbox öğeleri) */}
-      <div className="mt-6 space-y-6">
-        {windowDays.map((iso) => {
-          const dayItems = itemsForDate(iso);
-          return (
-            <div key={iso} ref={(el) => { sectionRefs.current[iso] = el; }}>
-              <h2 className={`font-display text-sm ${iso === todayISO ? "text-[var(--route)]" : "text-[var(--foreground)]"}`}>
-                {dateHeading(iso, todayISO)}
-              </h2>
-              <DayItemList
-                items={dayItems}
-                onToggle={handleToggle}
-                onDelete={handleDelete}
-                onReorderBulk={handleReorderBulk}
-              />
-              <AddRow onAdd={(list, text) => handleAdd(iso, list, text)} />
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="mt-6 space-y-6">
+          {windowDays.map((iso) => {
+            const dayItems = itemsForDate(iso);
+            return (
+              <div key={iso} ref={(el) => { sectionRefs.current[iso] = el; }}>
+                <h2 className={`font-display text-sm ${iso === todayISO ? "text-[var(--route)]" : "text-[var(--foreground)]"}`}>
+                  {dateHeading(iso, todayISO)}
+                </h2>
+                <DayItemList
+                  dayId={`day-${iso}`}
+                  items={dayItems}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                />
+                <AddRow onAdd={(list, text) => handleAdd(iso, list, text)} />
+              </div>
+            );
+          })}
+        </div>
+        <DragOverlay>
+          {activeDragItem && (
+            <div className="flex items-center gap-2 rounded-lg border border-[var(--border-strong)] bg-[var(--overlay)] px-3 py-2 text-sm text-[var(--foreground)] shadow-lg backdrop-blur-xl backdrop-saturate-150">
+              {activeDragItem.text}
             </div>
-          );
-        })}
-      </div>
+          )}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }

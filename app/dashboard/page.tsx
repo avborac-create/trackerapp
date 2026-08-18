@@ -1,5 +1,6 @@
 import { getDashboardStats } from "@/app/lib/actions";
 import { formatMonthLabel } from "@/app/lib/dates";
+import { HabitsSubNav } from "@/app/components/HabitsSubNav";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
+      <HabitsSubNav />
       <h1 className="mb-6 font-display text-lg text-[var(--foreground)]">
         Dashboard
       </h1>
