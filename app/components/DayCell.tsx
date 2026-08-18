@@ -71,7 +71,7 @@ export function DayCell({
   const textSize = size === "lg" ? "text-base" : "text-[11px]";
 
   return (
-    <div className="relative">
+    <div className="group relative">
       {size === "lg" && (
         <div className="mb-1 text-center text-[9px] font-semibold uppercase tracking-wide text-[var(--muted)]">
           {dayLabel}
@@ -121,11 +121,11 @@ export function DayCell({
             onOpenNote();
           }}
           aria-label={`${dayLabel} kayıtları${entryCount > 0 ? ` (${entryCount} kayıt)` : " ekle"}`}
-          className={`absolute bottom-0.5 right-0.5 flex h-[13px] min-w-[13px] items-center justify-center rounded-full text-[8px] font-semibold leading-none opacity-0 hover:opacity-100 ${
-            entryCount > 0 ? "opacity-70" : ""
+          className={`before:absolute before:-inset-1 before:content-[''] absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-[var(--surface)] bg-[var(--overlay)] text-[8px] font-semibold leading-none text-[var(--foreground)] shadow-sm opacity-0 group-hover:opacity-100 hover:opacity-100 ${
+            entryCount > 0 ? "opacity-90" : ""
           }`}
         >
-          {entryCount > 0 ? "" : "+"}
+          {entryCount > 0 ? "●" : "+"}
         </button>
       )}
 

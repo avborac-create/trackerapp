@@ -32,8 +32,14 @@ function StripRow({
   wn,
   weekDays,
   stat,
+  selectedDay,
   ...h
-}: Handlers & { wn: WeekNodeDTO; weekDays: string[]; stat: { completed: number; possible: number } }) {
+}: Handlers & {
+  wn: WeekNodeDTO;
+  weekDays: string[];
+  stat: { completed: number; possible: number };
+  selectedDay: string | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const theme = CATEGORY_THEME[wn.category];
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -88,7 +94,7 @@ function StripRow({
                         : status === "neglected"
                           ? "bg-rose-500/60"
                           : "bg-[var(--border-strong)]"
-                  }`}
+                  } ${day === selectedDay ? "ring-2 ring-[var(--compass)]" : ""}`}
                 />
               );
             })}
@@ -115,20 +121,26 @@ function StripRow({
             {weekDays.map((day, i) => {
               const applicable = day >= wn.includedOn && (!wn.removedOn || day <= wn.removedOn);
               return (
-                <DayCell
+                <div
                   key={day}
-                  size="lg"
-                  applicable={applicable}
-                  editable={h.editable}
-                  status={wn.marks[day] ?? null}
-                  entryCount={wn.dayEntries[day]?.length ?? 0}
-                  badgeStyle={h.badgeStyle}
-                  fillClass={theme.fill}
-                  dayLabel={DAY_LABELS[i]}
-                  onToggleDone={() => h.onToggleDay(wn.id, day)}
-                  onSetStatus={(status) => h.onSetDayStatus(wn.id, day, status)}
-                  onOpenNote={() => h.onOpenDayNote(wn.id, day)}
-                />
+                  className={`rounded-lg ${
+                    day === selectedDay ? "ring-2 ring-[var(--compass)] ring-offset-1 ring-offset-[var(--surface-2)]" : ""
+                  }`}
+                >
+                  <DayCell
+                    size="lg"
+                    applicable={applicable}
+                    editable={h.editable}
+                    status={wn.marks[day] ?? null}
+                    entryCount={wn.dayEntries[day]?.length ?? 0}
+                    badgeStyle={h.badgeStyle}
+                    fillClass={theme.fill}
+                    dayLabel={DAY_LABELS[i]}
+                    onToggleDone={() => h.onToggleDay(wn.id, day)}
+                    onSetStatus={(status) => h.onSetDayStatus(wn.id, day, status)}
+                    onOpenNote={() => h.onOpenDayNote(wn.id, day)}
+                  />
+                </div>
               );
             })}
           </div>
@@ -162,6 +174,7 @@ function CategoryGroup({
   stats,
   collapsed,
   onToggleCollapsed,
+  selectedDay,
   ...h
 }: Handlers & {
   category: Category;
@@ -170,6 +183,7 @@ function CategoryGroup({
   stats: WeekStats;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  selectedDay: string | null;
 }) {
   const theme = CATEGORY_THEME[category];
   const { setNodeRef, isOver } = useDroppable({ id: `cluster-${category}`, disabled: !h.editable });
@@ -203,6 +217,7 @@ function CategoryGroup({
                   wn={wn}
                   weekDays={weekDays}
                   stat={stats.nodeStats[wn.id] ?? { weekNodeId: wn.id, completed: 0, possible: 0 }}
+                  selectedDay={selectedDay}
                   {...h}
                 />
               ))}
@@ -219,6 +234,7 @@ export function HabitsStrip({
   stats,
   collapsedMap,
   onToggleCollapsed,
+  selectedDay = null,
   ...h
 }: Handlers & {
   week: WeekDTO;
@@ -226,6 +242,7 @@ export function HabitsStrip({
   stats: WeekStats;
   collapsedMap: Record<Category, boolean>;
   onToggleCollapsed: (category: Category) => void;
+  selectedDay?: string | null;
 }) {
   return (
     <div className="space-y-3">
@@ -238,6 +255,7 @@ export function HabitsStrip({
           stats={stats}
           collapsed={collapsedMap[cat]}
           onToggleCollapsed={() => onToggleCollapsed(cat)}
+          selectedDay={selectedDay}
           {...h}
         />
       ))}

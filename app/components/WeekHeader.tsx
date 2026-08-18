@@ -16,6 +16,8 @@ export function WeekHeader({
   onNext,
   onClose,
   busy,
+  selectedDay,
+  onSelectDay,
 }: {
   weekStartISO: string;
   weekEndISO: string;
@@ -29,6 +31,8 @@ export function WeekHeader({
   onNext: () => void;
   onClose: () => void;
   busy: boolean;
+  selectedDay?: string | null;
+  onSelectDay?: (day: string) => void;
 }) {
   return (
     <header>
@@ -74,7 +78,7 @@ export function WeekHeader({
         )}
       </div>
 
-      <MiniCalendar weekDays={weekDays} todayISO={todayISO} />
+      <MiniCalendar weekDays={weekDays} todayISO={todayISO} selectedDay={selectedDay} onSelectDay={onSelectDay} />
     </header>
   );
 }
