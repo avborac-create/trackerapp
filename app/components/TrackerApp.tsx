@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -10,6 +10,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
 import {
   addDailyMarkEntry,
   addNode,
@@ -20,6 +21,7 @@ import {
   getOrCreateCurrentWeek,
   getWeekByIdAction,
   moveNodeToAgenda,
+  reorderWeekNodesBulk,
   setDailyMarkStatus,
   setNodeExternalStatus,
   toggleDailyMark,
@@ -36,11 +38,14 @@ import {
   type WeekDTO,
 } from "@/app/lib/types";
 import { WeekHeader } from "@/app/components/WeekHeader";
-import { CategoryCluster } from "@/app/components/CategoryCluster";
 import { SummaryPanel } from "@/app/components/SummaryPanel";
 import { Drawer } from "@/app/components/Drawer";
 import { NodeEditPanel } from "@/app/components/NodeEditPanel";
 import { DayNoteModal } from "@/app/components/DayNoteModal";
+import { HabitsSubNav } from "@/app/components/HabitsSubNav";
+import { HabitsTable } from "@/app/components/HabitsTable";
+import { HabitsStrip } from "@/app/components/HabitsStrip";
+import { getDayBadgeStyle, getHabitsViewMode, type DayBadgeStyle, type HabitsViewMode } from "@/app/lib/prefs";
 
 export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [ready, setReady] = useState(false);
@@ -51,6 +56,9 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [week, setWeek] = useState<WeekDTO | null>(null);
   const [inboxNodes, setInboxNodes] = useState<NodeDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const autoRetriedRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -62,6 +70,9 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     active: false,
     passive: false,
   });
+  const [habitsView, setHabitsView] = useState<HabitsViewMode>("table");
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [dayBadgeStyle, setDayBadgeStyle] = useState<DayBadgeStyle>("corner");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -82,28 +93,46 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       stored[cat] = window.localStorage.getItem(`tracker_cluster_collapsed_${cat}`) === "1";
     }
     setCollapsedMap((prev) => ({ ...prev, ...stored }));
+    setHabitsView(getHabitsViewMode());
+    setDayBadgeStyle(getDayBadgeStyle());
   }, []);
 
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
     setLoading(true);
+    setLoadError(false);
+    setSelectedDay(null);
     const weekPromise = initialWeekId
       ? getWeekByIdAction(initialWeekId).then((w) => w ?? getOrCreateCurrentWeek(weekStartISO, weekEndISO))
       : getOrCreateCurrentWeek(weekStartISO, weekEndISO);
     Promise.all([weekPromise, getInboxNodes()])
       .then(([w, nodes]) => {
         if (cancelled) return;
+        autoRetriedRef.current = false;
         setWeek(w);
         setInboxNodes(nodes);
+        setLoading(false);
       })
-      .catch(() => !cancelled && setNotice("Veriler yüklenemedi."))
-      .finally(() => !cancelled && setLoading(false));
+      .catch(() => {
+        if (cancelled) return;
+        // Neon veritabanı boşta kalınca uykuya geçiyor; ilk sorgu genelde
+        // uyandırma gecikmesiyle başarısız olur — ekranı "yükleniyor"da
+        // tutup sessizce bir kez daha dene, kullanıcıya hata göstermeden önce.
+        if (!autoRetriedRef.current) {
+          autoRetriedRef.current = true;
+          setTimeout(() => !cancelled && setRetryKey((k) => k + 1), 2000);
+          return;
+        }
+        setLoadError(true);
+        setNotice("Veriler yüklenemedi. Sunucuya ulaşılamıyor olabilir.");
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, weekStartISO, weekEndISO]);
+  }, [ready, weekStartISO, weekEndISO, retryKey]);
 
   useEffect(() => {
     if (!notice) return;
@@ -286,6 +315,33 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     setActiveDragTitle(data?.title ?? null);
   }
 
+  async function handleReorderWeekNodes(category: Category, activeWeekNodeId: string, targetWeekNodeId: string) {
+    if (!week) return;
+    const categoryNodes = week.weekNodes
+      .filter((wn) => wn.category === category)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const oldIndex = categoryNodes.findIndex((wn) => wn.id === activeWeekNodeId);
+    const newIndex = categoryNodes.findIndex((wn) => wn.id === targetWeekNodeId);
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+
+    const reordered = arrayMove(categoryNodes, oldIndex, newIndex);
+    const sortOrders = categoryNodes.map((wn) => wn.sortOrder).sort((a, b) => a - b);
+    const prevWeek = week;
+
+    setWeek((w) =>
+      w
+        ? {
+            ...w,
+            weekNodes: w.weekNodes.map((wn) => {
+              const idx = reordered.findIndex((r) => r.id === wn.id);
+              return idx === -1 ? wn : { ...wn, sortOrder: sortOrders[idx] };
+            }),
+          }
+        : w
+    );
+    await reorderWeekNodesBulk(reordered.map((wn) => wn.id)).catch(() => setWeek(prevWeek));
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragTitle(null);
     const { active, over } = event;
@@ -318,6 +374,20 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       const targetStatus = overId.slice("drawer-".length) as "inbox" | "not_now" | "closed";
       if (data.kind === "drawer" && data.status === targetStatus) return;
       handleSetStatus(data.nodeId, targetStatus);
+      return;
+    }
+
+    if (overId.startsWith("agenda-") && data.kind === "agenda") {
+      const activeWeekNodeId = String(active.id).slice("agenda-".length);
+      const targetWeekNodeId = overId.slice("agenda-".length);
+      if (activeWeekNodeId === targetWeekNodeId) return;
+      const targetNode = week?.weekNodes.find((wn) => wn.id === targetWeekNodeId);
+      if (!targetNode) return;
+      if (targetNode.category === data.category) {
+        handleReorderWeekNodes(data.category, activeWeekNodeId, targetWeekNodeId);
+      } else {
+        handleChangeCategory(data.nodeId, targetNode.category);
+      }
     }
   }
 
@@ -456,10 +526,27 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const dayNoteDayIndex = editingDayNote ? weekDays.indexOf(editingDayNote.day) : -1;
   const dayNoteEntries = (editingDayNote && dayNoteWeekNode?.dayEntries[editingDayNote.day]) || [];
 
-  if (!ready || loading || !week || !stats) {
+  if (!ready || loading) {
     return (
-      <div className="mx-auto flex max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
+      <div className="mx-auto flex min-h-[60dvh] max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
         Yükleniyor…
+      </div>
+    );
+  }
+
+  if (loadError || !week || !stats) {
+    return (
+      <div className="mx-auto flex min-h-[60dvh] max-w-6xl flex-col items-center justify-center gap-3 px-4 py-24 text-center">
+        <p className="text-sm text-[var(--muted)]">
+          Veriler yüklenemedi. Sunucuya ulaşılamıyor olabilir.
+        </p>
+        <button
+          type="button"
+          onClick={() => setRetryKey((k) => k + 1)}
+          className="rounded-full bg-[var(--compass)] px-4 py-1.5 text-xs font-medium text-[var(--compass-soft)] shadow-sm"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }
@@ -472,6 +559,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
           {notice}
         </div>
       )}
+
+      <HabitsSubNav />
 
       <WeekHeader
         weekStartISO={week.startsOn}
@@ -486,6 +575,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
         onNext={handleNext}
         onClose={handleClose}
         busy={busy}
+        selectedDay={selectedDay}
+        onSelectDay={(day) => setSelectedDay(day || null)}
       />
 
       <div className="mt-4 grid gap-4 md:grid-cols-[1fr_360px]">
@@ -506,29 +597,32 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
               Tümünü daralt
             </button>
           </div>
-          {CATEGORY_ORDER.map((cat) => (
-            <CategoryCluster
-              key={cat}
-              category={cat}
-              weekNodes={week.weekNodes.filter((wn) => wn.category === cat)}
-              weekDays={weekDays}
-              stats={stats}
-              editable={editable}
-              collapsed={collapsedMap[cat]}
-              onToggleCollapsed={() => toggleClusterCollapsed(cat)}
-              onToggleDay={handleToggleDay}
-              onSetDayStatus={handleSetDayStatus}
-              onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}
-              onEditNode={(weekNodeId) => {
-                const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                if (wn) setEditingNodeId(wn.nodeId);
-              }}
-              onStopNode={(weekNodeId) => {
-                const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                if (wn) handleStopNode(wn.nodeId);
-              }}
-            />
-          ))}
+          {(() => {
+            const HabitsView = habitsView === "strip" ? HabitsStrip : HabitsTable;
+            return (
+              <HabitsView
+                week={week}
+                weekDays={weekDays}
+                stats={stats}
+                editable={editable}
+                badgeStyle={dayBadgeStyle}
+                collapsedMap={collapsedMap}
+                onToggleCollapsed={toggleClusterCollapsed}
+                selectedDay={selectedDay}
+                onToggleDay={handleToggleDay}
+                onSetDayStatus={handleSetDayStatus}
+                onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}
+                onEditNode={(weekNodeId) => {
+                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
+                  if (wn) setEditingNodeId(wn.nodeId);
+                }}
+                onStopNode={(weekNodeId) => {
+                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
+                  if (wn) handleStopNode(wn.nodeId);
+                }}
+              />
+            );
+          })()}
         </div>
 
         <div className="space-y-4">

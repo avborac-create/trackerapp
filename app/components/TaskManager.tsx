@@ -94,17 +94,22 @@ function DateControl({ date, onSet, onClear }: { date: string | null; onSet: (is
   }
 
   if (open) {
+    // iOS, odaklanılan form kontrolünün font-size'ı 16px'in altındaysa sayfayı
+    // otomatik yakınlaştırır — bu yüzden gerçek font-size'ı 16px tutup görsel
+    // boyutu transform: scale() ile küçültüyoruz (bkz. "Bölümsüz" seçici).
     return (
-      <input
-        type="date"
-        autoFocus
-        onChange={(e) => {
-          if (e.target.value) onSet(e.target.value);
-          setOpen(false);
-        }}
-        onBlur={() => setOpen(false)}
-        className="shrink-0 rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] px-1.5 py-0.5 text-[10px] text-[var(--foreground)]"
-      />
+      <span className="relative -my-1.5 inline-block h-[19px] w-[92px] shrink-0 overflow-hidden align-middle">
+        <input
+          type="date"
+          autoFocus
+          onChange={(e) => {
+            if (e.target.value) onSet(e.target.value);
+            setOpen(false);
+          }}
+          onBlur={() => setOpen(false)}
+          className="absolute left-0 top-0 origin-top-left scale-[0.7] rounded-full border border-[var(--border-subtle)] bg-[var(--surface)] px-1.5 py-0.5 text-[var(--foreground)]"
+        />
+      </span>
     );
   }
 
@@ -198,18 +203,27 @@ function TaskRow({
         <div className="mt-1 flex flex-wrap items-center gap-1">
           <DateControl date={item.date} onSet={onSetDate} onClear={() => onSetDate(null)} />
           {sections.length > 0 && (
-            <select
-              value={item.sectionId ?? ""}
-              onChange={(e) => onSetSection(e.target.value || null)}
-              className="shrink-0 rounded-full border-none bg-transparent py-0.5 text-[10px] font-medium text-[var(--muted)] hover:text-[var(--foreground)] focus:outline-none"
-            >
-              <option value="">Bölümsüz</option>
-              {sections.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            // iOS, odaklanılan form kontrolünün font-size'ı 16px'in altındaysa sayfayı
+            // otomatik yakınlaştırır — bu yüzden gerçek font-size'ı 16px tutup görsel
+            // boyutu transform: scale() ile küçültüyoruz (zoom tetiklenmez).
+            <span className="relative -my-1.5 -ml-0.5 inline-block h-[19px] w-[78px] shrink-0 overflow-hidden align-middle">
+              <select
+                value={item.sectionId ?? ""}
+                onChange={(e) => onSetSection(e.target.value || null)}
+                aria-label="Kısım"
+                className="absolute left-0 top-0 origin-top-left scale-[0.7] appearance-none whitespace-nowrap rounded-full border-none bg-[var(--surface-2)] py-0.5 pl-2 pr-4 font-medium leading-none text-[var(--muted)] hover:text-[var(--foreground)] focus:outline-none"
+              >
+                <option value="">Bölümsüz</option>
+                {sections.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <span aria-hidden className="pointer-events-none absolute right-1 top-1 text-[8px] text-[var(--muted)]">
+                ▾
+              </span>
+            </span>
           )}
           {moveTargets.map((target) => (
             <button
@@ -254,7 +268,17 @@ function SortableTaskRow(props: TaskRowBaseProps) {
   );
 }
 
-function AddItemForm({ onAdd, placeholder = "Yeni öğe, Enter'a bas…" }: { onAdd: (text: string) => void; placeholder?: string }) {
+function AddItemForm({
+  onAdd,
+  placeholder = "Yeni öğe, Enter'a bas…",
+  autoFocus = false,
+  onDone,
+}: {
+  onAdd: (text: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onDone?: () => void;
+}) {
   const [text, setText] = useState("");
   return (
     <form
@@ -269,6 +293,13 @@ function AddItemForm({ onAdd, placeholder = "Yeni öğe, Enter'a bas…" }: { on
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onDone?.();
+        }}
+        onBlur={() => {
+          if (!text.trim()) onDone?.();
+        }}
+        autoFocus={autoFocus}
         placeholder={placeholder}
         className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
       />
@@ -396,6 +427,7 @@ function TaskColumn({
   onDeleteSection: (id: string) => void;
 }) {
   const [addingSection, setAddingSection] = useState(false);
+  const [addingItem, setAddingItem] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const doneCount = items.filter((i) => i.done).length;
   const unsectioned = items.filter((i) => !i.sectionId);
@@ -405,8 +437,8 @@ function TaskColumn({
   }
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-4 backdrop-blur-xl backdrop-saturate-150">
-      <h2 className="flex items-center gap-1.5 font-display text-base text-[var(--foreground)]">
+    <div className="relative flex min-w-0 flex-1 flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface)] p-4 backdrop-blur-xl backdrop-saturate-150">
+      <h2 className="flex items-center gap-1.5 font-display text-xl font-bold tracking-tight text-[var(--foreground)]">
         <ListIcon list={list} className="text-[var(--muted)]" />
         {TASK_LIST_LABELS[list]}{" "}
         <span className="text-xs font-normal tabular-nums text-[var(--muted)]">
@@ -414,9 +446,23 @@ function TaskColumn({
         </span>
       </h2>
 
-      <div className="mt-3">
-        <AddItemForm onAdd={(text) => onAdd(text, null)} />
-      </div>
+      {addingItem ? (
+        <div className="mt-3">
+          <AddItemForm
+            autoFocus
+            onAdd={(text) => onAdd(text, null)}
+            onDone={() => setAddingItem(false)}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAddingItem(true)}
+          className="mt-3 flex items-center gap-1.5 text-sm font-medium text-[var(--muted)] hover:text-[var(--compass)]"
+        >
+          <span aria-hidden>+</span> Yeni öğe
+        </button>
+      )}
 
       <div className="mt-3 space-y-4">
         <ItemGroup
@@ -449,11 +495,16 @@ function TaskColumn({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onDeleteSection(section.id)}
+                  onClick={() => {
+                    if (window.confirm(`"${section.name}" kısmını silmek istediğine emin misin? İçindeki öğeler bölümsüz olarak kalacak.`)) {
+                      onDeleteSection(section.id);
+                    }
+                  }}
                   aria-label={`${section.name} kısmını sil`}
-                  className="text-[10px] text-[var(--muted)] hover:text-[var(--route)]"
+                  title="Kısmı sil"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--route)]"
                 >
-                  Kısmı sil
+                  ⋯
                 </button>
               </div>
               {!collapsed && (
@@ -514,6 +565,17 @@ function TaskColumn({
           </button>
         )}
       </div>
+
+      {!addingItem && (
+        <button
+          type="button"
+          onClick={() => setAddingItem(true)}
+          aria-label="Yeni öğe ekle"
+          className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--route)] text-2xl font-light text-white shadow-lg lg:hidden"
+        >
+          +
+        </button>
+      )}
     </div>
   );
 }

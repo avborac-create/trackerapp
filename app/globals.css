@@ -75,7 +75,11 @@
 
 html {
   background: var(--background);
-  height: 100%;
+  /* height:100% yerine min-height:100dvh — mobilde dinamik görünür alanı
+     (safe-area/home-indicator dahil) yüzde tabanlı height'tan daha güvenilir
+     kapsar; kısa içerikli sayfalarda (ör. "Yükleniyor…") en altta beyaz
+     boşluk kalmasını önler. */
+  min-height: 100dvh;
   /* iOS'ta sayfa ucuna (üst/alt) kaydırınca oluşan "rubber-band" sekmesi
      sırasında arka planın beyaz yanıp sönmesini engeller. */
   overscroll-behavior-y: none;
