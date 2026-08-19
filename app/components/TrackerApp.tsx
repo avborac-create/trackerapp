@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -56,6 +56,9 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [week, setWeek] = useState<WeekDTO | null>(null);
   const [inboxNodes, setInboxNodes] = useState<NodeDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const autoRetriedRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -68,6 +71,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     passive: false,
   });
   const [habitsView, setHabitsView] = useState<HabitsViewMode>("table");
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dayBadgeStyle, setDayBadgeStyle] = useState<DayBadgeStyle>("corner");
 
   const sensors = useSensors(
@@ -97,22 +101,38 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     if (!ready) return;
     let cancelled = false;
     setLoading(true);
+    setLoadError(false);
+    setSelectedDay(null);
     const weekPromise = initialWeekId
       ? getWeekByIdAction(initialWeekId).then((w) => w ?? getOrCreateCurrentWeek(weekStartISO, weekEndISO))
       : getOrCreateCurrentWeek(weekStartISO, weekEndISO);
     Promise.all([weekPromise, getInboxNodes()])
       .then(([w, nodes]) => {
         if (cancelled) return;
+        autoRetriedRef.current = false;
         setWeek(w);
         setInboxNodes(nodes);
+        setLoading(false);
       })
-      .catch(() => !cancelled && setNotice("Veriler yüklenemedi."))
-      .finally(() => !cancelled && setLoading(false));
+      .catch(() => {
+        if (cancelled) return;
+        // Neon veritabanı boşta kalınca uykuya geçiyor; ilk sorgu genelde
+        // uyandırma gecikmesiyle başarısız olur — ekranı "yükleniyor"da
+        // tutup sessizce bir kez daha dene, kullanıcıya hata göstermeden önce.
+        if (!autoRetriedRef.current) {
+          autoRetriedRef.current = true;
+          setTimeout(() => !cancelled && setRetryKey((k) => k + 1), 2000);
+          return;
+        }
+        setLoadError(true);
+        setNotice("Veriler yüklenemedi. Sunucuya ulaşılamıyor olabilir.");
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, weekStartISO, weekEndISO]);
+  }, [ready, weekStartISO, weekEndISO, retryKey]);
 
   useEffect(() => {
     if (!notice) return;
@@ -506,10 +526,27 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const dayNoteDayIndex = editingDayNote ? weekDays.indexOf(editingDayNote.day) : -1;
   const dayNoteEntries = (editingDayNote && dayNoteWeekNode?.dayEntries[editingDayNote.day]) || [];
 
-  if (!ready || loading || !week || !stats) {
+  if (!ready || loading) {
     return (
       <div className="mx-auto flex min-h-[60dvh] max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
         Yükleniyor…
+      </div>
+    );
+  }
+
+  if (loadError || !week || !stats) {
+    return (
+      <div className="mx-auto flex min-h-[60dvh] max-w-6xl flex-col items-center justify-center gap-3 px-4 py-24 text-center">
+        <p className="text-sm text-[var(--muted)]">
+          Veriler yüklenemedi. Sunucuya ulaşılamıyor olabilir.
+        </p>
+        <button
+          type="button"
+          onClick={() => setRetryKey((k) => k + 1)}
+          className="rounded-full bg-[var(--compass)] px-4 py-1.5 text-xs font-medium text-[var(--compass-soft)] shadow-sm"
+        >
+          Tekrar dene
+        </button>
       </div>
     );
   }
@@ -538,6 +575,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
         onNext={handleNext}
         onClose={handleClose}
         busy={busy}
+        selectedDay={selectedDay}
+        onSelectDay={(day) => setSelectedDay(day || null)}
       />
 
       <div className="mt-4 grid gap-4 md:grid-cols-[1fr_360px]">
@@ -569,6 +608,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
                 badgeStyle={dayBadgeStyle}
                 collapsedMap={collapsedMap}
                 onToggleCollapsed={toggleClusterCollapsed}
+                selectedDay={selectedDay}
                 onToggleDay={handleToggleDay}
                 onSetDayStatus={handleSetDayStatus}
                 onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}

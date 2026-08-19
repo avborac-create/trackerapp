@@ -21,7 +21,8 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("tracker_theme");if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t);}}catch(e){}})();`;
+// Açık tema kaldırıldı — uygulama artık her zaman koyu (Buzlu Cam) temada açılır.
+const THEME_INIT_SCRIPT = `(function(){document.documentElement.setAttribute("data-theme","dark");})();`;
 
 const ACCENT_PRESETS_JSON = JSON.stringify({
   blue: { accent: "#0a84ff", soft: "#f0f8ff" },
