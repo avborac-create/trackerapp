@@ -23,8 +23,8 @@ type Handlers = {
   onToggleDay: (weekNodeId: string, day: string) => void;
   onSetDayStatus: (weekNodeId: string, day: string, status: DailyMarkStatus | null) => void;
   onOpenDayNote: (weekNodeId: string, day: string) => void;
-  onEditNode: (weekNodeId: string) => void;
-  onStopNode: (weekNodeId: string) => void;
+  onEditNode: (nodeId: string) => void;
+  onStopNode: (nodeId: string) => void;
 };
 
 function HabitCard({
