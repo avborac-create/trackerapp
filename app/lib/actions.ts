@@ -4,7 +4,14 @@ import { prisma } from "@/app/lib/prisma";
 import { isoToUTCDate, utcDateToISO } from "@/app/lib/dates";
 import { toNodeDTO, toWeekDTO } from "@/app/lib/serialize";
 import type { Category, ExternalStatus } from "@prisma/client";
-import type { DailyMarkStatus, DashboardStats, NodeDTO, WeekDTO, WeekHistoryEntryDTO } from "@/app/lib/types";
+import type {
+  DailyMarkEntryKind,
+  DailyMarkStatus,
+  DashboardStats,
+  NodeDTO,
+  WeekDTO,
+  WeekHistoryEntryDTO,
+} from "@/app/lib/types";
 import { computeWeekStats } from "@/app/lib/stats";
 
 const WEEK_INCLUDE = {
@@ -371,32 +378,45 @@ export async function setDailyMarkStatus(
 }
 
 /**
- * O gün için ayrı bir uygulama kaydı ekler (aynı gün birden çok kez uygulanmış
- * olabilir, her biri kendi kaydıyla sayılır). Kayıt eklenince gün otomatik
- * tamamlandı sayılır.
+ * O gün için ayrı bir kayıt ekler (aynı gün birden çok kez uygulanmış ya da
+ * denenip başarısız olunmuş olabilir, her biri kendi kaydıyla sayılır).
+ * "success" kaydı gün otomatik tamamlandı sayılır; "failure" kaydı günün
+ * durumunu değiştirmez (sadece kayıt tutar).
  */
 export async function addDailyMarkEntry(
   weekNodeId: string,
   dayISO: string,
-  text: string
-): Promise<{ day: string; status: DailyMarkStatus | null; entry: { id: string; text: string } }> {
+  text: string,
+  kind: DailyMarkEntryKind = "success"
+): Promise<{
+  day: string;
+  status: DailyMarkStatus | null;
+  entry: { id: string; text: string; kind: DailyMarkEntryKind };
+}> {
   const trimmed = text.trim();
   const day = isoToUTCDate(dayISO);
 
-  const mark = await prisma.dailyMark.upsert({
-    where: { weekNodeId_day: { weekNodeId, day } },
-    update: { status: "done" },
-    create: { weekNodeId, day, status: "done" },
-  });
+  const mark =
+    kind === "success"
+      ? await prisma.dailyMark.upsert({
+          where: { weekNodeId_day: { weekNodeId, day } },
+          update: { status: "done" },
+          create: { weekNodeId, day, status: "done" },
+        })
+      : await prisma.dailyMark.upsert({
+          where: { weekNodeId_day: { weekNodeId, day } },
+          update: {},
+          create: { weekNodeId, day },
+        });
 
   const entry = await prisma.dailyMarkEntry.create({
-    data: { dailyMarkId: mark.id, text: trimmed },
+    data: { dailyMarkId: mark.id, text: trimmed, kind },
   });
 
   return {
     day: utcDateToISO(mark.day),
-    status: mark.status,
-    entry: { id: entry.id, text: entry.text },
+    status: mark.status as DailyMarkStatus | null,
+    entry: { id: entry.id, text: entry.text, kind: entry.kind as DailyMarkEntryKind },
   };
 }
 

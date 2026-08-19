@@ -1,5 +1,5 @@
 import { utcDateToISO } from "@/app/lib/dates";
-import type { DailyMarkStatus, NodeDTO, WeekDTO, WeekNodeDTO } from "@/app/lib/types";
+import type { DailyMarkEntryKind, DailyMarkStatus, NodeDTO, WeekDTO, WeekNodeDTO } from "@/app/lib/types";
 
 type WeekNodeWithRelations = {
   id: string;
@@ -12,7 +12,7 @@ type WeekNodeWithRelations = {
   dailyMarks: {
     day: Date;
     status: string | null;
-    entries: { id: string; text: string }[];
+    entries: { id: string; text: string; kind: string }[];
   }[];
 };
 
@@ -26,11 +26,13 @@ type WeekWithRelations = {
 
 export function toWeekNodeDTO(wn: WeekNodeWithRelations): WeekNodeDTO {
   const marks: Record<string, DailyMarkStatus> = {};
-  const dayEntries: Record<string, { id: string; text: string }[]> = {};
+  const dayEntries: Record<string, { id: string; text: string; kind: DailyMarkEntryKind }[]> = {};
   for (const m of wn.dailyMarks) {
     const iso = utcDateToISO(m.day);
     if (m.status) marks[iso] = m.status as DailyMarkStatus;
-    if (m.entries.length > 0) dayEntries[iso] = m.entries;
+    if (m.entries.length > 0) {
+      dayEntries[iso] = m.entries.map((e) => ({ ...e, kind: e.kind as DailyMarkEntryKind }));
+    }
   }
   return {
     id: wn.id,
