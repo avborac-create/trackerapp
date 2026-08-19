@@ -613,14 +613,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
                 onToggleDay={handleToggleDay}
                 onSetDayStatus={handleSetDayStatus}
                 onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}
-                onEditNode={(weekNodeId) => {
-                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                  if (wn) setEditingNodeId(wn.nodeId);
-                }}
-                onStopNode={(weekNodeId) => {
-                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                  if (wn) handleStopNode(wn.nodeId);
-                }}
+                onEditNode={(nodeId) => setEditingNodeId(nodeId)}
+                onStopNode={(nodeId) => handleStopNode(nodeId)}
               />
             );
           })()}
