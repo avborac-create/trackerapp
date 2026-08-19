@@ -91,9 +91,9 @@ function StripRow({
                     done
                       ? theme.fill
                       : status === "unexpected"
-                        ? "bg-amber-500/60"
+                        ? "bg-amber-500/20 ring-1 ring-inset ring-amber-500"
                         : status === "neglected"
-                          ? "bg-rose-500/60"
+                          ? "bg-rose-500/20 ring-1 ring-inset ring-rose-500"
                           : "bg-[var(--border-strong)]"
                   } ${day === selectedDay ? "ring-2 ring-[var(--compass)]" : ""}`}
                 />
