@@ -8,6 +8,7 @@ import { CATEGORY_THEME } from "@/app/lib/colors";
 import {
   CATEGORY_LABELS,
   CATEGORY_ORDER,
+  computeDayNetScore,
   type Category,
   type DailyMarkStatus,
   type WeekDTO,
@@ -107,6 +108,7 @@ function HabitCard({
                 editable={h.editable}
                 status={wn.marks[day] ?? null}
                 entryCount={wn.dayEntries[day]?.length ?? 0}
+                netScore={computeDayNetScore(wn.dayEntries[day] ?? [])}
                 badgeStyle={h.badgeStyle}
                 fillClass={theme.fill}
                 dayLabel={DAY_LABELS[i]}

@@ -18,6 +18,7 @@ export function DayCell({
   editable,
   status,
   entryCount,
+  netScore,
   badgeStyle,
   fillClass,
   dayLabel,
@@ -30,6 +31,8 @@ export function DayCell({
   editable: boolean;
   status: DailyMarkStatus | null;
   entryCount: number;
+  /** Kayıt sayısı yerine gösterilecek net puan (başarı − başarısız); negatif olabilir. */
+  netScore: number;
   badgeStyle: DayBadgeStyle;
   fillClass: string;
   dayLabel: string;
@@ -113,7 +116,11 @@ export function DayCell({
       >
         {badgeStyle === "number" && entryCount > 0 ? (
           <>
-            <span className={size === "lg" ? "text-lg font-bold" : "text-xs font-bold"}>{entryCount}</span>
+            <span
+              className={`${size === "lg" ? "text-lg" : "text-xs"} font-bold ${netScore < 0 ? "text-rose-400" : ""}`}
+            >
+              {netScore}
+            </span>
             {status === "done" && (
               <span
                 aria-hidden
@@ -127,8 +134,13 @@ export function DayCell({
           <>
             <span aria-hidden>{!applicable ? "–" : statusIcon}</span>
             {badgeStyle === "corner" && entryCount > 0 && (
-              <span aria-hidden className="absolute right-0.5 top-0.5 text-[8px] font-bold leading-none opacity-90">
-                {entryCount}
+              <span
+                aria-hidden
+                className={`absolute right-0.5 top-0.5 text-[8px] font-bold leading-none ${
+                  netScore < 0 ? "text-rose-400 opacity-100" : "opacity-90"
+                }`}
+              >
+                {netScore}
               </span>
             )}
           </>
