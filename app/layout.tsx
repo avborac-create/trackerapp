@@ -19,6 +19,10 @@ export const viewport: Viewport = {
   // Klavye açıldığında sayfayı üstüne bindirmek yerine görünür alanı küçültür —
   // sabit konumlu (fixed) modallerin klavyenin arkasında beyaz boşluk bırakmasını önler.
   interactiveWidget: "resizes-content",
+  // theme-color olmadan Safari, sayfanın altındaki/üstündeki kendi araç
+  // çubuğunu varsayılan açık renkte gösteriyor — koyu temada bu "beyaz
+  // boşluk" gibi görünüyordu. Buzlu Cam arka planının koyu ucuyla eşleşiyor.
+  themeColor: "#1a1a1d",
 };
 
 // Açık tema kaldırıldı — uygulama artık her zaman koyu (Buzlu Cam) temada açılır.

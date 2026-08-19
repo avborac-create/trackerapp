@@ -17,9 +17,17 @@ export const STATUS_LABELS: Record<ExternalStatus, string> = {
   closed: "✅ Kapatıldı",
 };
 
+export type DailyMarkEntryKind = "success" | "failure";
+
 export interface DayEntry {
   id: string;
   text: string;
+  kind: DailyMarkEntryKind;
+}
+
+/** Bir günün kayıtlarından net puanı çıkarır: her "success" +1, her "failure" −1. */
+export function computeDayNetScore(entries: DayEntry[]): number {
+  return entries.reduce((sum, e) => sum + (e.kind === "failure" ? -1 : 1), 0);
 }
 
 /** done: yapıldı. unexpected: beklenmedik engel (yüzdenin paydasından düşülür).

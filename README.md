@@ -68,3 +68,4 @@ bozulmaz.
 - `/` — ana hafta yüzeyi (kategori kümeleri, günlük işaretleme, özet paneli, Gelen Kutusu)
 - `/history` — geçmiş haftaların listesi (salt okunur)
 - `/dashboard` — düğüm bazlı aylık tamamlanma tablosu
+

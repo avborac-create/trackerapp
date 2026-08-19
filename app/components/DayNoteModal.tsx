@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { DayEntry } from "@/app/lib/types";
+import { useEffect, useState } from "react";
+import type { DailyMarkEntryKind, DayEntry } from "@/app/lib/types";
 
 export function DayNoteModal({
   title,
@@ -17,10 +17,30 @@ export function DayNoteModal({
   entries: DayEntry[];
   busy: boolean;
   onClose: () => void;
-  onAdd: (text: string) => void;
+  onAdd: (text: string, kind: DailyMarkEntryKind) => void;
   onDelete: (entryId: string) => void;
 }) {
   const [text, setText] = useState("");
+  const [kind, setKind] = useState<DailyMarkEntryKind>("success");
+
+  // Modal açıkken arka sayfayı olduğu konumda kilitler; klavye/autoFocus
+  // sayfayı kaydırsa bile kapanınca kullanıcı tam bıraktığı yere döner.
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top, left: body.style.left, right: body.style.right };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.left = prev.left;
+      body.style.right = prev.right;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-x-0 top-0 z-50 flex h-dvh items-end justify-center bg-black/40 p-0 backdrop-blur-sm md:items-center md:p-4">
@@ -49,8 +69,16 @@ export function DayNoteModal({
                 key={entry.id}
                 className="flex items-start gap-2 rounded-lg border border-[var(--border-subtle)] p-2.5 text-sm"
               >
-                <span className="mt-0.5 shrink-0 text-xs font-semibold text-[var(--muted)]">
-                  {i + 1}
+                <span
+                  aria-hidden
+                  title={entry.kind === "failure" ? "Başarısız" : "Başarılı"}
+                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
+                    entry.kind === "failure"
+                      ? "bg-rose-500/15 text-rose-500"
+                      : "bg-emerald-500/15 text-emerald-500"
+                  }`}
+                >
+                  {entry.kind === "failure" ? "✕" : "✓"}
                 </span>
                 <span className="flex-1 whitespace-pre-wrap text-[var(--foreground)]">
                   {entry.text || <span className="italic text-[var(--muted)]">Açıklama yok</span>}
@@ -72,22 +100,53 @@ export function DayNoteModal({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onAdd(text.trim());
+            onAdd(text.trim(), kind);
             setText("");
+            setKind("success");
           }}
           className="mt-4"
         >
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setKind("success")}
+              aria-pressed={kind === "success"}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                kind === "success"
+                  ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-500"
+                  : "border-[var(--border-subtle)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+              }`}
+            >
+              ✓ Başardım
+            </button>
+            <button
+              type="button"
+              onClick={() => setKind("failure")}
+              aria-pressed={kind === "failure"}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                kind === "failure"
+                  ? "border-rose-500/40 bg-rose-500/15 text-rose-500"
+                  : "border-[var(--border-subtle)] text-[var(--muted)] hover:bg-[var(--surface-2)]"
+              }`}
+            >
+              ✕ Başaramadım
+            </button>
+          </div>
           <textarea
             autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={3}
-            placeholder="Bu sefer hangi konuda / nasıl uyguladın?"
-            className="w-full resize-none rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
+            placeholder={
+              kind === "failure" ? "Bu sefer ne oldu / neden olmadı?" : "Bu sefer hangi konuda / nasıl uyguladın?"
+            }
+            className="mt-3 w-full resize-none rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
           />
           <p className="mt-1.5 text-[11px] text-[var(--muted)] opacity-80">
-            Her kayıt ayrı sayılır — aynı gün içinde istediğin kadar ekleyebilirsin. Açıklama
-            yazmadan da kaydedebilirsin.
+            Her kayıt ayrı sayılır — aynı gün içinde istediğin kadar ekleyebilirsin.
+            {kind === "success"
+              ? " \"Başardım\" günü otomatik tamamlandı işaretler."
+              : " \"Başaramadım\" günün işaretini değiştirmez, sadece kayıt tutar."}
           </p>
           <div className="mt-3 flex justify-end gap-2">
             <button

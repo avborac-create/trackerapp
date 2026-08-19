@@ -9,6 +9,7 @@ import { CATEGORY_THEME } from "@/app/lib/colors";
 import {
   CATEGORY_LABELS,
   CATEGORY_ORDER,
+  computeDayNetScore,
   type Category,
   type DailyMarkStatus,
   type WeekDTO,
@@ -24,8 +25,8 @@ type Handlers = {
   onToggleDay: (weekNodeId: string, day: string) => void;
   onSetDayStatus: (weekNodeId: string, day: string, status: DailyMarkStatus | null) => void;
   onOpenDayNote: (weekNodeId: string, day: string) => void;
-  onEditNode: (weekNodeId: string) => void;
-  onStopNode: (weekNodeId: string) => void;
+  onEditNode: (nodeId: string) => void;
+  onStopNode: (nodeId: string) => void;
 };
 
 function StripRow({
@@ -133,6 +134,7 @@ function StripRow({
                     editable={h.editable}
                     status={wn.marks[day] ?? null}
                     entryCount={wn.dayEntries[day]?.length ?? 0}
+                    netScore={computeDayNetScore(wn.dayEntries[day] ?? [])}
                     badgeStyle={h.badgeStyle}
                     fillClass={theme.fill}
                     dayLabel={DAY_LABELS[i]}

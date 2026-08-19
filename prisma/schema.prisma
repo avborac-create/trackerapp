@@ -49,6 +49,14 @@ enum DailyMarkStatus {
   neglected
 }
 
+// Gün içi tekil kayıtların türü: success = uygulama anı, failure = başarısız
+// olunan/denenip olmayan an. İkisi de aynı günün kayıt listesinde birlikte
+// tutulur, sayaç ayrımı bu alana göre yapılır.
+enum DailyMarkEntryKind {
+  success
+  failure
+}
+
 model Node {
   id             String         @id @default(cuid())
   title          String
@@ -119,6 +127,7 @@ model DailyMarkEntry {
   dailyMark   DailyMark @relation(fields: [dailyMarkId], references: [id], onDelete: Cascade)
 
   text      String
+  kind      DailyMarkEntryKind @default(success)
   createdAt DateTime @default(now())
 
   @@map("tracker_daily_mark_entries")

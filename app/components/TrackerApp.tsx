@@ -32,6 +32,7 @@ import { computeWeekStats } from "@/app/lib/stats";
 import {
   CATEGORY_ORDER,
   type Category,
+  type DailyMarkEntryKind,
   type DailyMarkStatus,
   type ExternalStatus,
   type NodeDTO,
@@ -461,12 +462,12 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     handleSetStatus(nodeId, "not_now");
   }
 
-  async function handleAddDayEntry(text: string) {
+  async function handleAddDayEntry(text: string, kind: DailyMarkEntryKind) {
     if (!editingDayNote) return;
     const { weekNodeId, day } = editingDayNote;
     setBusy(true);
     try {
-      const result = await addDailyMarkEntry(weekNodeId, day, text);
+      const result = await addDailyMarkEntry(weekNodeId, day, text, kind);
       setWeek((w) =>
         w
           ? {
@@ -528,7 +529,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
 
   if (!ready || loading) {
     return (
-      <div className="mx-auto flex min-h-[60dvh] max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
+      <div className="mx-auto flex min-h-dvh w-full max-w-6xl items-center justify-center bg-[var(--background)] px-4 py-24 text-sm text-[var(--muted)]">
         Yükleniyor…
       </div>
     );
@@ -536,7 +537,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
 
   if (loadError || !week || !stats) {
     return (
-      <div className="mx-auto flex min-h-[60dvh] max-w-6xl flex-col items-center justify-center gap-3 px-4 py-24 text-center">
+      <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col items-center justify-center gap-3 bg-[var(--background)] px-4 py-24 text-center">
         <p className="text-sm text-[var(--muted)]">
           Veriler yüklenemedi. Sunucuya ulaşılamıyor olabilir.
         </p>
@@ -612,14 +613,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
                 onToggleDay={handleToggleDay}
                 onSetDayStatus={handleSetDayStatus}
                 onOpenDayNote={(weekNodeId, day) => setEditingDayNote({ weekNodeId, day })}
-                onEditNode={(weekNodeId) => {
-                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                  if (wn) setEditingNodeId(wn.nodeId);
-                }}
-                onStopNode={(weekNodeId) => {
-                  const wn = week.weekNodes.find((x) => x.id === weekNodeId);
-                  if (wn) handleStopNode(wn.nodeId);
-                }}
+                onEditNode={(nodeId) => setEditingNodeId(nodeId)}
+                onStopNode={(nodeId) => handleStopNode(nodeId)}
               />
             );
           })()}
