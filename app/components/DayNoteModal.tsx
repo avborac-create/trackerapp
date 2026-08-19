@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DailyMarkEntryKind, DayEntry } from "@/app/lib/types";
 
 export function DayNoteModal({
@@ -22,6 +22,25 @@ export function DayNoteModal({
 }) {
   const [text, setText] = useState("");
   const [kind, setKind] = useState<DailyMarkEntryKind>("success");
+
+  // Modal açıkken arka sayfayı olduğu konumda kilitler; klavye/autoFocus
+  // sayfayı kaydırsa bile kapanınca kullanıcı tam bıraktığı yere döner.
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top, left: body.style.left, right: body.style.right };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.left = prev.left;
+      body.style.right = prev.right;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-x-0 top-0 z-50 flex h-dvh items-end justify-center bg-black/40 p-0 backdrop-blur-sm md:items-center md:p-4">
