@@ -143,8 +143,8 @@ export function DayCell({
             onOpenNote();
           }}
           aria-label={`${dayLabel} kayıtları${entryCount > 0 ? ` (${entryCount} kayıt)` : " ekle"}`}
-          className={`before:absolute before:-inset-1 before:content-[''] absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-[var(--surface)] bg-[var(--overlay)] text-[8px] font-semibold leading-none text-[var(--foreground)] shadow-sm opacity-0 group-hover:opacity-100 hover:opacity-100 ${
-            entryCount > 0 ? "opacity-90" : ""
+          className={`before:absolute before:-inset-1 before:content-[''] absolute -bottom-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-[var(--surface)] bg-[var(--overlay)] text-[8px] font-semibold leading-none text-[var(--foreground)] shadow-sm transition-opacity hover:opacity-100 ${
+            entryCount > 0 ? "opacity-90" : "opacity-40"
           }`}
         >
           {entryCount > 0 ? "●" : "+"}
