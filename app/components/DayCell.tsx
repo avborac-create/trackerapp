@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { DAILY_MARK_STATUS_LABELS, type DailyMarkStatus } from "@/app/lib/types";
 import type { DayBadgeStyle } from "@/app/lib/prefs";
 
@@ -37,6 +38,13 @@ export function DayCell({
   onOpenNote: () => void;
 }) {
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimer.current) clearTimeout(clickTimer.current);
+    };
+  }, []);
 
   const statusIcon = status === "done" ? "✓" : status === "unexpected" ? "⚠" : status === "neglected" ? "✕" : "○";
   const statusClass =
@@ -51,7 +59,10 @@ export function DayCell({
   function openPicker(target: HTMLElement) {
     const rect = target.getBoundingClientRect();
     const menuHeight = 44;
-    const opensUp = rect.bottom + 6 + menuHeight > window.innerHeight;
+    // iOS Safari'de window.innerHeight adres çubuğu daralmadan önceki değeri
+    // verebiliyor; visualViewport gerçek görünür alanı yansıtır.
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const opensUp = rect.bottom + 6 + menuHeight > viewportHeight;
     setPickerPos({
       top: opensUp ? rect.top - 6 - menuHeight : rect.bottom + 6,
       left: Math.min(Math.max(rect.left + rect.width / 2, 80), window.innerWidth - 80),
@@ -60,11 +71,22 @@ export function DayCell({
 
   function handleClick(e: React.MouseEvent<HTMLButtonElement>) {
     if (!applicable || !editable) return;
-    if (status === null) {
-      onToggleDone();
-    } else {
-      openPicker(e.currentTarget);
+    const target = e.currentTarget;
+    if (clickTimer.current) {
+      // İkinci tıklama zaman penceresi içinde geldi — çift tıklama olarak say.
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      openPicker(target);
+      return;
     }
+    clickTimer.current = setTimeout(() => {
+      clickTimer.current = null;
+      if (status === null) {
+        onToggleDone();
+      } else {
+        onSetStatus(null);
+      }
+    }, 260);
   }
 
   const dim = size === "lg" ? "aspect-square w-full min-h-11" : "h-full w-full min-h-9";
@@ -129,42 +151,44 @@ export function DayCell({
         </button>
       )}
 
-      {pickerPos && (
-        <>
-          <button
-            type="button"
-            aria-label="Kapat"
-            className="fixed inset-0 z-40 cursor-default"
-            onClick={() => setPickerPos(null)}
-          />
-          <div
-            role="menu"
-            style={{ top: pickerPos.top, left: pickerPos.left }}
-            className="fixed z-50 flex -translate-x-1/2 gap-0.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--overlay)] p-1 shadow-xl backdrop-blur-xl backdrop-saturate-150"
-          >
-            {STATUS_PICKS.map((pick) => (
-              <button
-                key={pick.status ?? "none"}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  onSetStatus(pick.status);
-                  setPickerPos(null);
-                }}
-                aria-label={pick.status ? DAILY_MARK_STATUS_LABELS[pick.status] : "Boş"}
-                title={pick.status ? DAILY_MARK_STATUS_LABELS[pick.status] : "Boş"}
-                className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-medium transition-colors ${
-                  status === pick.status
-                    ? "bg-[var(--foreground)] text-[var(--invert)]"
-                    : "text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
-                }`}
-              >
-                {pick.icon}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {pickerPos &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              aria-label="Kapat"
+              className="fixed inset-0 z-40 cursor-default"
+              onClick={() => setPickerPos(null)}
+            />
+            <div
+              role="menu"
+              style={{ top: pickerPos.top, left: pickerPos.left }}
+              className="fixed z-50 flex -translate-x-1/2 gap-0.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--overlay)] p-1 shadow-xl backdrop-blur-xl backdrop-saturate-150"
+            >
+              {STATUS_PICKS.map((pick) => (
+                <button
+                  key={pick.status ?? "none"}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onSetStatus(pick.status);
+                    setPickerPos(null);
+                  }}
+                  aria-label={pick.status ? DAILY_MARK_STATUS_LABELS[pick.status] : "Boş"}
+                  title={pick.status ? DAILY_MARK_STATUS_LABELS[pick.status] : "Boş"}
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-medium transition-colors ${
+                    status === pick.status
+                      ? "bg-[var(--foreground)] text-[var(--invert)]"
+                      : "text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  {pick.icon}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }
