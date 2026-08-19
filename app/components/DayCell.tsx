@@ -50,13 +50,16 @@ export function DayCell({
   }, []);
 
   const statusIcon = status === "done" ? "✓" : status === "unexpected" ? "⚠" : status === "neglected" ? "✕" : "○";
+  // "unexpected"/"neglected" dolu renk yerine çerçeveli/soluk ton kullanır —
+  // dolu renk kategori rengiyle (ör. Aktif = kırmızı, Multi = sarı) aynı
+  // tona denk gelince "yapıldı" ile görsel olarak ayırt edilemez oluyordu.
   const statusClass =
     status === "done"
       ? `${fillClass} text-white`
       : status === "unexpected"
-        ? "bg-amber-500 text-white"
+        ? "border-2 border-amber-500 bg-amber-500/10 text-amber-500"
         : status === "neglected"
-          ? "bg-rose-500 text-white"
+          ? "border-2 border-rose-500 bg-rose-500/10 text-rose-500"
           : "border border-[var(--border-subtle)] bg-[var(--surface-2)] text-[var(--muted)]";
 
   function openPicker(target: HTMLElement) {
