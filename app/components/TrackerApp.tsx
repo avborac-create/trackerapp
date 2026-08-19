@@ -528,7 +528,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
 
   if (!ready || loading) {
     return (
-      <div className="mx-auto flex min-h-[60dvh] max-w-6xl items-center justify-center px-4 py-24 text-sm text-[var(--muted)]">
+      <div className="mx-auto flex min-h-dvh w-full max-w-6xl items-center justify-center bg-[var(--background)] px-4 py-24 text-sm text-[var(--muted)]">
         Yükleniyor…
       </div>
     );
@@ -536,7 +536,7 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
 
   if (loadError || !week || !stats) {
     return (
-      <div className="mx-auto flex min-h-[60dvh] max-w-6xl flex-col items-center justify-center gap-3 px-4 py-24 text-center">
+      <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col items-center justify-center gap-3 bg-[var(--background)] px-4 py-24 text-center">
         <p className="text-sm text-[var(--muted)]">
           Veriler yüklenemedi. Sunucuya ulaşılamıyor olabilir.
         </p>
