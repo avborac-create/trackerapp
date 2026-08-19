@@ -32,6 +32,7 @@ import { computeWeekStats } from "@/app/lib/stats";
 import {
   CATEGORY_ORDER,
   type Category,
+  type DailyMarkEntryKind,
   type DailyMarkStatus,
   type ExternalStatus,
   type NodeDTO,
@@ -461,12 +462,12 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     handleSetStatus(nodeId, "not_now");
   }
 
-  async function handleAddDayEntry(text: string) {
+  async function handleAddDayEntry(text: string, kind: DailyMarkEntryKind) {
     if (!editingDayNote) return;
     const { weekNodeId, day } = editingDayNote;
     setBusy(true);
     try {
-      const result = await addDailyMarkEntry(weekNodeId, day, text);
+      const result = await addDailyMarkEntry(weekNodeId, day, text, kind);
       setWeek((w) =>
         w
           ? {

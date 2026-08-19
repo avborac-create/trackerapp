@@ -17,9 +17,12 @@ export const STATUS_LABELS: Record<ExternalStatus, string> = {
   closed: "✅ Kapatıldı",
 };
 
+export type DailyMarkEntryKind = "success" | "failure";
+
 export interface DayEntry {
   id: string;
   text: string;
+  kind: DailyMarkEntryKind;
 }
 
 /** done: yapıldı. unexpected: beklenmedik engel (yüzdenin paydasından düşülür).
