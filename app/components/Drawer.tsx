@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { CATEGORY_LABELS, CATEGORY_ORDER, type Category, type NodeDTO } from "@/app/lib/types";
@@ -142,6 +142,8 @@ function DrawerColumn({
   items,
   editable,
   busy,
+  collapsed,
+  onToggleCollapsed,
   pickingCategoryFor,
   onTogglePickCategory,
   onMoveToAgenda,
@@ -152,6 +154,8 @@ function DrawerColumn({
   items: NodeDTO[];
   editable: boolean;
   busy: boolean;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   pickingCategoryFor: string | null;
   onTogglePickCategory: (nodeId: string) => void;
   onMoveToAgenda: (nodeId: string, category: Category) => void;
@@ -162,33 +166,43 @@ function DrawerColumn({
 
   return (
     <div ref={setNodeRef} className={`rounded-xl transition-colors ${isOver ? "ring-2 ring-[var(--border-strong)]" : ""}`}>
-      <h3 className="flex items-center gap-1.5 px-1 text-xs font-bold uppercase tracking-wide">
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-xs font-bold uppercase tracking-wide"
+        aria-expanded={!collapsed}
+        aria-label={`${STATUS_LABEL_PLAIN[status]} bölümünü ${collapsed ? "aç" : "kapat"}`}
+      >
+        <span aria-hidden className={`text-[9px] text-[var(--muted)] transition-transform ${collapsed ? "-rotate-90" : ""}`}>
+          ▾
+        </span>
         <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_ACCENT[status] }} />
         <span style={{ color: STATUS_ACCENT[status] }}>{STATUS_LABEL_PLAIN[status]}</span>
         <span className="font-medium normal-case text-[var(--muted)]">({items.length})</span>
-      </h3>
-      {items.length === 0 ? (
-        <p className="mt-1.5 px-1 text-xs text-[var(--muted)] opacity-60">
-          {isOver ? "Buraya bırak" : "—"}
-        </p>
-      ) : (
-        <ul className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((n) => (
-            <DrawerCard
-              key={n.id}
-              node={n}
-              status={status}
-              editable={editable}
-              busy={busy}
-              pickingCategory={pickingCategoryFor === n.id}
-              onTogglePickCategory={() => onTogglePickCategory(n.id)}
-              onMoveToAgenda={(cat) => onMoveToAgenda(n.id, cat)}
-              onSetStatus={(s) => onSetStatus(n.id, s)}
-              onEditNode={() => onEditNode(n.id)}
-            />
-          ))}
-        </ul>
-      )}
+      </button>
+      {!collapsed &&
+        (items.length === 0 ? (
+          <p className="mt-1.5 px-1 text-xs text-[var(--muted)] opacity-60">
+            {isOver ? "Buraya bırak" : "—"}
+          </p>
+        ) : (
+          <ul className="mt-2 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            {items.map((n) => (
+              <DrawerCard
+                key={n.id}
+                node={n}
+                status={status}
+                editable={editable}
+                busy={busy}
+                pickingCategory={pickingCategoryFor === n.id}
+                onTogglePickCategory={() => onTogglePickCategory(n.id)}
+                onMoveToAgenda={(cat) => onMoveToAgenda(n.id, cat)}
+                onSetStatus={(s) => onSetStatus(n.id, s)}
+                onEditNode={() => onEditNode(n.id)}
+              />
+            ))}
+          </ul>
+        ))}
     </div>
   );
 }
@@ -212,6 +226,28 @@ export function Drawer({
 }) {
   const [title, setTitle] = useState("");
   const [pickingCategoryFor, setPickingCategoryFor] = useState<string | null>(null);
+  const [collapsedMap, setCollapsedMap] = useState<Record<DrawerStatus, boolean>>({
+    inbox: false,
+    not_now: false,
+    closed: false,
+  });
+
+  useEffect(() => {
+    const stored: Partial<Record<DrawerStatus, boolean>> = {};
+    (["inbox", "not_now", "closed"] as DrawerStatus[]).forEach((status) => {
+      const raw = window.localStorage.getItem(`tracker_drawer_collapsed_${status}`);
+      if (raw !== null) stored[status] = raw === "1";
+    });
+    setCollapsedMap((prev) => ({ ...prev, ...stored }));
+  }, []);
+
+  function toggleColumnCollapsed(status: DrawerStatus) {
+    setCollapsedMap((prev) => {
+      const next = { ...prev, [status]: !prev[status] };
+      window.localStorage.setItem(`tracker_drawer_collapsed_${status}`, next[status] ? "1" : "0");
+      return next;
+    });
+  }
 
   const groups: { status: "inbox" | "not_now" | "closed"; items: NodeDTO[] }[] = [
     { status: "inbox", items: nodes.filter((n) => n.externalStatus === "inbox") },
@@ -274,6 +310,8 @@ export function Drawer({
             items={g.items}
             editable={editable}
             busy={busy}
+            collapsed={collapsedMap[g.status]}
+            onToggleCollapsed={() => toggleColumnCollapsed(g.status)}
             pickingCategoryFor={pickingCategoryFor}
             onTogglePickCategory={(nodeId) =>
               setPickingCategoryFor(pickingCategoryFor === nodeId ? null : nodeId)
