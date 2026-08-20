@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CATEGORY_THEME } from "@/app/lib/colors";
 import {
   CATEGORY_LABELS,
@@ -36,6 +36,19 @@ export function NodeEditPanel({
   const [notes, setNotes] = useState(node.notes ?? "");
   const [tags, setTags] = useState<string[]>(node.tags);
   const [tagDraft, setTagDraft] = useState("");
+
+  // Modal açıkken arka sayfayı kilitler; kapanınca kullanıcı tam bıraktığı
+  // yere döner (bkz. DayNoteModal — aynı sınıftan bug, aynı çözüm).
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.overflow = prevOverflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
 
   function commitTagDraft() {
     const trimmed = tagDraft.trim();
