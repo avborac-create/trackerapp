@@ -3,8 +3,24 @@
 import { useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { CATEGORY_LABELS, CATEGORY_ORDER, STATUS_LABELS, type Category, type NodeDTO } from "@/app/lib/types";
+import { CATEGORY_LABELS, CATEGORY_ORDER, type Category, type NodeDTO } from "@/app/lib/types";
 import { CATEGORY_THEME } from "@/app/lib/colors";
+
+type DrawerStatus = "inbox" | "not_now" | "closed";
+
+// Bölümün "anlam rengi": Gelen Kutusu = hakim renk (aksiyon bekliyor),
+// Durduruldu = nötr/soluk, Kapatıldı = yeşil (tamamlanmış/arşiv).
+const STATUS_ACCENT: Record<DrawerStatus, string> = {
+  inbox: "var(--compass)",
+  not_now: "var(--muted)",
+  closed: "#10b981",
+};
+
+const STATUS_LABEL_PLAIN: Record<DrawerStatus, string> = {
+  inbox: "Gelen Kutusu",
+  not_now: "Durduruldu",
+  closed: "Kapatıldı",
+};
 
 function DrawerCard({
   node,
@@ -36,7 +52,11 @@ function DrawerCard({
   return (
     <li
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        borderLeftColor: STATUS_ACCENT[status],
+        borderLeftWidth: "3px",
+      }}
       className={`rounded-lg border border-[var(--border-subtle)] p-3 text-sm ${
         isDragging ? "z-50 opacity-50 shadow-lg" : ""
       }`}
@@ -142,8 +162,10 @@ function DrawerColumn({
 
   return (
     <div ref={setNodeRef} className={`rounded-xl transition-colors ${isOver ? "ring-2 ring-[var(--border-strong)]" : ""}`}>
-      <h3 className="px-1 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-        {STATUS_LABELS[status]} ({items.length})
+      <h3 className="flex items-center gap-1.5 px-1 text-xs font-bold uppercase tracking-wide">
+        <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_ACCENT[status] }} />
+        <span style={{ color: STATUS_ACCENT[status] }}>{STATUS_LABEL_PLAIN[status]}</span>
+        <span className="font-medium normal-case text-[var(--muted)]">({items.length})</span>
       </h3>
       {items.length === 0 ? (
         <p className="mt-1.5 px-1 text-xs text-[var(--muted)] opacity-60">
