@@ -24,7 +24,6 @@ import {
   reorderWeekNodesBulk,
   setDailyMarkStatus,
   setNodeExternalStatus,
-  toggleDailyMark,
   updateNode,
 } from "@/app/lib/actions";
 import { addDaysISO, DAY_LABELS, getWeekDays, getWeekStart, toISODate } from "@/app/lib/dates";
@@ -47,6 +46,14 @@ import { HabitsSubNav } from "@/app/components/HabitsSubNav";
 import { HabitsTable } from "@/app/components/HabitsTable";
 import { HabitsStrip } from "@/app/components/HabitsStrip";
 import { getDayBadgeStyle, getHabitsViewMode, type DayBadgeStyle, type HabitsViewMode } from "@/app/lib/prefs";
+
+const MAX_UNDO_HISTORY = 20;
+
+type UndoCommand = {
+  label: string;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+};
 
 export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [ready, setReady] = useState(false);
@@ -74,6 +81,8 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   const [habitsView, setHabitsView] = useState<HabitsViewMode>("table");
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dayBadgeStyle, setDayBadgeStyle] = useState<DayBadgeStyle>("corner");
+  const [undoStack, setUndoStack] = useState<UndoCommand[]>([]);
+  const [redoStack, setRedoStack] = useState<UndoCommand[]>([]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -172,6 +181,59 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     setInboxNodes(nodes);
   }
 
+  function pushCommand(cmd: UndoCommand) {
+    setUndoStack((s) => [...s, cmd].slice(-MAX_UNDO_HISTORY));
+    setRedoStack([]);
+  }
+
+  async function handleUndo() {
+    const cmd = undoStack[undoStack.length - 1];
+    if (!cmd || busy) return;
+    setBusy(true);
+    try {
+      await cmd.undo();
+      setUndoStack((s) => s.slice(0, -1));
+      setRedoStack((s) => [...s, cmd]);
+      setNotice(`Geri alındı: ${cmd.label}`);
+    } catch {
+      setNotice("Geri alma başarısız oldu.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRedo() {
+    const cmd = redoStack[redoStack.length - 1];
+    if (!cmd || busy) return;
+    setBusy(true);
+    try {
+      await cmd.redo();
+      setRedoStack((s) => s.slice(0, -1));
+      setUndoStack((s) => [...s, cmd]);
+      setNotice(`Yinelendi: ${cmd.label}`);
+    } catch {
+      setNotice("Yineleme başarısız oldu.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (isTyping) return;
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) handleRedo();
+      else handleUndo();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undoStack, redoStack, busy]);
+
   function withMark(marks: Record<string, DailyMarkStatus>, day: string, status: DailyMarkStatus | null) {
     const next = { ...marks };
     if (status) next[day] = status;
@@ -190,17 +252,27 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     );
   }
 
+  async function applyDayStatus(weekNodeId: string, day: string, status: DailyMarkStatus | null) {
+    const result = await setDailyMarkStatus(weekNodeId, day, status);
+    applyMark(weekNodeId, result.day, result.status);
+  }
+
   function handleToggleDay(weekNodeId: string, day: string) {
     if (!editable || !week) return;
     const wn = week.weekNodes.find((x) => x.id === weekNodeId);
     if (!wn) return;
     const prev = wn.marks[day] ?? null;
-    const optimisticNext: DailyMarkStatus | null = prev === "done" ? null : "done";
-    applyMark(weekNodeId, day, optimisticNext);
+    const nextStatus: DailyMarkStatus | null = prev === "done" ? null : "done";
+    applyMark(weekNodeId, day, nextStatus);
 
-    toggleDailyMark(weekNodeId, day)
+    setDailyMarkStatus(weekNodeId, day, nextStatus)
       .then((result) => {
         applyMark(weekNodeId, result.day, result.status);
+        pushCommand({
+          label: "Gün işareti",
+          undo: () => applyDayStatus(weekNodeId, day, prev),
+          redo: () => applyDayStatus(weekNodeId, day, nextStatus),
+        });
       })
       .catch(() => {
         applyMark(weekNodeId, day, prev);
@@ -218,6 +290,11 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     setDailyMarkStatus(weekNodeId, day, status)
       .then((result) => {
         applyMark(weekNodeId, result.day, result.status);
+        pushCommand({
+          label: "Gün durumu",
+          undo: () => applyDayStatus(weekNodeId, day, prev),
+          redo: () => applyDayStatus(weekNodeId, day, status),
+        });
       })
       .catch(() => {
         applyMark(weekNodeId, day, prev);
@@ -277,35 +354,79 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     }
   }
 
-  async function handleMoveToAgenda(nodeId: string, category: Category) {
-    setBusy(true);
-    try {
-      const w = await moveNodeToAgenda(nodeId, category, todayISO, weekStartISO, weekEndISO);
+  // Bir eylemin "yerini" (gündemde mi, yoksa hangi dış durumda mı) yakalar —
+  // durdurma/gündeme alma gibi işlemleri geri almak için önceki yeri bilmek gerekir.
+  type NodePlacement = { onAgenda: true; category: Category } | { onAgenda: false; status: "inbox" | "not_now" | "closed" };
+
+  function captureNodePlacement(nodeId: string): NodePlacement {
+    const wn = week?.weekNodes.find((x) => x.nodeId === nodeId);
+    if (wn) return { onAgenda: true, category: wn.category };
+    const inboxNode = inboxNodes.find((n) => n.id === nodeId);
+    const status = (inboxNode?.externalStatus as "inbox" | "not_now" | "closed") ?? "inbox";
+    return { onAgenda: false, status };
+  }
+
+  async function applyPlacement(nodeId: string, placement: NodePlacement) {
+    if (placement.onAgenda) {
+      const w = await moveNodeToAgenda(nodeId, placement.category, todayISO, weekStartISO, weekEndISO);
       setWeek(w);
       await refreshInbox();
+    } else {
+      await setNodeExternalStatus(nodeId, placement.status, todayISO);
+      await refreshInbox();
+      setWeek((w) => (w ? { ...w, weekNodes: w.weekNodes.filter((x) => x.nodeId !== nodeId) } : w));
+    }
+  }
+
+  async function handleMoveToAgenda(nodeId: string, category: Category) {
+    const prevPlacement = captureNodePlacement(nodeId);
+    setBusy(true);
+    try {
+      await applyPlacement(nodeId, { onAgenda: true, category });
+      pushCommand({
+        label: "Gündeme alındı",
+        undo: () => applyPlacement(nodeId, prevPlacement),
+        redo: () => applyPlacement(nodeId, { onAgenda: true, category }),
+      });
     } finally {
       setBusy(false);
     }
   }
 
   async function handleSetStatus(nodeId: string, status: "inbox" | "not_now" | "closed") {
+    const prevPlacement = captureNodePlacement(nodeId);
     setBusy(true);
     try {
-      await setNodeExternalStatus(nodeId, status, todayISO);
-      await refreshInbox();
-      setWeek((w) => (w ? { ...w, weekNodes: w.weekNodes.filter((x) => x.nodeId !== nodeId) } : w));
+      await applyPlacement(nodeId, { onAgenda: false, status });
+      pushCommand({
+        label: "Durum değişti",
+        undo: () => applyPlacement(nodeId, prevPlacement),
+        redo: () => applyPlacement(nodeId, { onAgenda: false, status }),
+      });
     } finally {
       setBusy(false);
     }
   }
 
+  async function applyCategory(nodeId: string, category: Category) {
+    await updateNode(nodeId, { category });
+    setWeek((w) =>
+      w ? { ...w, weekNodes: w.weekNodes.map((x) => (x.nodeId === nodeId ? { ...x, category } : x)) } : w
+    );
+  }
+
   async function handleChangeCategory(nodeId: string, category: Category) {
+    const prevCategory = week?.weekNodes.find((x) => x.nodeId === nodeId)?.category;
     setBusy(true);
     try {
-      await updateNode(nodeId, { category });
-      setWeek((w) =>
-        w ? { ...w, weekNodes: w.weekNodes.map((x) => (x.nodeId === nodeId ? { ...x, category } : x)) } : w
-      );
+      await applyCategory(nodeId, category);
+      if (prevCategory) {
+        pushCommand({
+          label: "Kategori değişti",
+          undo: () => applyCategory(nodeId, prevCategory),
+          redo: () => applyCategory(nodeId, category),
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -408,50 +529,69 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
         }
       : null;
 
-  async function handleSaveEdit(patch: {
+  type NodePatch = {
     title: string;
     category: Category;
     externalStatus: ExternalStatus;
     notes: string | null;
     tags: string[];
-  }) {
+  };
+
+  async function applyNodePatch(nodeId: string, prevStatus: ExternalStatus, patch: NodePatch) {
+    const wasOnAgenda = prevStatus === "on_agenda";
+    const willBeOnAgenda = patch.externalStatus === "on_agenda";
+
+    if (willBeOnAgenda && !wasOnAgenda) {
+      const w = await moveNodeToAgenda(nodeId, patch.category, todayISO, weekStartISO, weekEndISO);
+      setWeek(w);
+      await updateNode(nodeId, { title: patch.title, notes: patch.notes, tags: patch.tags });
+    } else if (!willBeOnAgenda && wasOnAgenda) {
+      await setNodeExternalStatus(nodeId, patch.externalStatus, todayISO);
+      await updateNode(nodeId, {
+        title: patch.title,
+        category: patch.category,
+        notes: patch.notes,
+        tags: patch.tags,
+      });
+      setWeek((w) => (w ? { ...w, weekNodes: w.weekNodes.filter((x) => x.nodeId !== nodeId) } : w));
+    } else {
+      await updateNode(nodeId, patch);
+      if (wasOnAgenda) {
+        setWeek((w) =>
+          w
+            ? {
+                ...w,
+                weekNodes: w.weekNodes.map((x) =>
+                  x.nodeId === nodeId
+                    ? { ...x, title: patch.title, category: patch.category, notes: patch.notes, tags: patch.tags }
+                    : x
+                ),
+              }
+            : w
+        );
+      }
+    }
+    await refreshInbox();
+  }
+
+  async function handleSaveEdit(patch: NodePatch) {
     if (!editingNode) return;
+    const nodeId = editingNode.id;
+    const prevPatch: NodePatch = {
+      title: editingNode.title,
+      category: editingNode.category,
+      externalStatus: editingNode.externalStatus,
+      notes: editingNode.notes,
+      tags: editingNode.tags,
+    };
     setBusy(true);
     try {
-      const wasOnAgenda = editingNode.externalStatus === "on_agenda";
-      const willBeOnAgenda = patch.externalStatus === "on_agenda";
-
-      if (willBeOnAgenda && !wasOnAgenda) {
-        const w = await moveNodeToAgenda(editingNode.id, patch.category, todayISO, weekStartISO, weekEndISO);
-        setWeek(w);
-        await updateNode(editingNode.id, { title: patch.title, notes: patch.notes, tags: patch.tags });
-      } else if (!willBeOnAgenda && wasOnAgenda) {
-        await setNodeExternalStatus(editingNode.id, patch.externalStatus, todayISO);
-        await updateNode(editingNode.id, {
-          title: patch.title,
-          category: patch.category,
-          notes: patch.notes,
-          tags: patch.tags,
-        });
-        setWeek((w) => (w ? { ...w, weekNodes: w.weekNodes.filter((x) => x.nodeId !== editingNode.id) } : w));
-      } else {
-        await updateNode(editingNode.id, patch);
-        if (wasOnAgenda) {
-          setWeek((w) =>
-            w
-              ? {
-                  ...w,
-                  weekNodes: w.weekNodes.map((x) =>
-                    x.nodeId === editingNode.id
-                      ? { ...x, title: patch.title, category: patch.category, notes: patch.notes, tags: patch.tags }
-                      : x
-                  ),
-                }
-              : w
-          );
-        }
-      }
-      await refreshInbox();
+      await applyNodePatch(nodeId, prevPatch.externalStatus, patch);
+      pushCommand({
+        label: "Eylem düzenlendi",
+        undo: () => applyNodePatch(nodeId, patch.externalStatus, prevPatch),
+        redo: () => applyNodePatch(nodeId, prevPatch.externalStatus, patch),
+      });
       setEditingNodeId(null);
     } finally {
       setBusy(false);
@@ -462,31 +602,70 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
     handleSetStatus(nodeId, "not_now");
   }
 
+  async function applyAddDayEntry(
+    weekNodeId: string,
+    day: string,
+    text: string,
+    kind: DailyMarkEntryKind,
+    entryRef: { id: string }
+  ) {
+    const result = await addDailyMarkEntry(weekNodeId, day, text, kind);
+    entryRef.id = result.entry.id;
+    setWeek((w) =>
+      w
+        ? {
+            ...w,
+            weekNodes: w.weekNodes.map((x) =>
+              x.id === weekNodeId
+                ? {
+                    ...x,
+                    marks: withMark(x.marks, result.day, result.status),
+                    dayEntries: {
+                      ...x.dayEntries,
+                      [result.day]: [...(x.dayEntries[result.day] ?? []), result.entry],
+                    },
+                  }
+                : x
+            ),
+          }
+        : w
+    );
+  }
+
+  async function applyDeleteDayEntry(weekNodeId: string, day: string, entryRef: { id: string }) {
+    await deleteDailyMarkEntry(weekNodeId, day, entryRef.id);
+    setWeek((w) =>
+      w
+        ? {
+            ...w,
+            weekNodes: w.weekNodes.map((x) =>
+              x.id === weekNodeId
+                ? {
+                    ...x,
+                    dayEntries: {
+                      ...x.dayEntries,
+                      [day]: (x.dayEntries[day] ?? []).filter((e) => e.id !== entryRef.id),
+                    },
+                  }
+                : x
+            ),
+          }
+        : w
+    );
+  }
+
   async function handleAddDayEntry(text: string, kind: DailyMarkEntryKind) {
     if (!editingDayNote) return;
     const { weekNodeId, day } = editingDayNote;
     setBusy(true);
     try {
-      const result = await addDailyMarkEntry(weekNodeId, day, text, kind);
-      setWeek((w) =>
-        w
-          ? {
-              ...w,
-              weekNodes: w.weekNodes.map((x) =>
-                x.id === weekNodeId
-                  ? {
-                      ...x,
-                      marks: withMark(x.marks, result.day, result.status),
-                      dayEntries: {
-                        ...x.dayEntries,
-                        [result.day]: [...(x.dayEntries[result.day] ?? []), result.entry],
-                      },
-                    }
-                  : x
-              ),
-            }
-          : w
-      );
+      const entryRef = { id: "" };
+      await applyAddDayEntry(weekNodeId, day, text, kind, entryRef);
+      pushCommand({
+        label: "Kayıt eklendi",
+        undo: () => applyDeleteDayEntry(weekNodeId, day, entryRef),
+        redo: () => applyAddDayEntry(weekNodeId, day, text, kind, entryRef),
+      });
     } finally {
       setBusy(false);
     }
@@ -495,27 +674,19 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
   async function handleDeleteDayEntry(entryId: string) {
     if (!editingDayNote) return;
     const { weekNodeId, day } = editingDayNote;
+    const wn = week?.weekNodes.find((x) => x.id === weekNodeId);
+    const entry = wn?.dayEntries[day]?.find((e) => e.id === entryId);
     setBusy(true);
     try {
-      await deleteDailyMarkEntry(weekNodeId, day, entryId);
-      setWeek((w) =>
-        w
-          ? {
-              ...w,
-              weekNodes: w.weekNodes.map((x) =>
-                x.id === weekNodeId
-                  ? {
-                      ...x,
-                      dayEntries: {
-                        ...x.dayEntries,
-                        [day]: (x.dayEntries[day] ?? []).filter((e) => e.id !== entryId),
-                      },
-                    }
-                  : x
-              ),
-            }
-          : w
-      );
+      const entryRef = { id: entryId };
+      await applyDeleteDayEntry(weekNodeId, day, entryRef);
+      if (entry) {
+        pushCommand({
+          label: "Kayıt silindi",
+          undo: () => applyAddDayEntry(weekNodeId, day, entry.text, entry.kind, entryRef),
+          redo: () => applyDeleteDayEntry(weekNodeId, day, entryRef),
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -562,6 +733,29 @@ export function TrackerApp({ initialWeekId }: { initialWeekId?: string }) {
       )}
 
       <HabitsSubNav />
+
+      <div className="mb-2 flex items-center justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={busy || undoStack.length === 0}
+          title={undoStack.length > 0 ? `Geri al: ${undoStack[undoStack.length - 1].label}` : "Geri alınacak işlem yok"}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--foreground)] disabled:opacity-30 disabled:hover:bg-transparent"
+          aria-label="Geri al"
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          onClick={handleRedo}
+          disabled={busy || redoStack.length === 0}
+          title={redoStack.length > 0 ? `Yinele: ${redoStack[redoStack.length - 1].label}` : "Yinelenecek işlem yok"}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--foreground)] disabled:opacity-30 disabled:hover:bg-transparent"
+          aria-label="Yinele"
+        >
+          ↷
+        </button>
+      </div>
 
       <WeekHeader
         weekStartISO={week.startsOn}
