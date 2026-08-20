@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { CATEGORY_THEME } from "@/app/lib/colors";
 import {
   CATEGORY_LABELS,
@@ -36,6 +36,7 @@ export function NodeEditPanel({
   const [notes, setNotes] = useState(node.notes ?? "");
   const [tags, setTags] = useState<string[]>(node.tags);
   const [tagDraft, setTagDraft] = useState("");
+  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   // Modal açıkken arka sayfayı kilitler; kapanınca kullanıcı tam bıraktığı
   // yere döner (bkz. DayNoteModal — aynı sınıftan bug, aynı çözüm).
@@ -62,9 +63,63 @@ export function NodeEditPanel({
     setTags((prev) => prev.filter((t) => t !== tag));
   }
 
+  function nextListNumber(value: string, lineStart: number): number {
+    if (lineStart === 0) return 1;
+    const prevLineStart = value.lastIndexOf("\n", lineStart - 2) + 1;
+    const prevLine = value.slice(prevLineStart, lineStart - 1);
+    const match = prevLine.match(/^(\s*)(\d+)\.\s/);
+    return match ? parseInt(match[2], 10) + 1 : 1;
+  }
+
+  function insertListPrefix(kind: "bullet" | "number") {
+    const textarea = notesRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? notes.length;
+    const lineStart = notes.lastIndexOf("\n", start - 1) + 1;
+    const prefix = kind === "bullet" ? "• " : `${nextListNumber(notes, lineStart)}. `;
+    const newValue = notes.slice(0, lineStart) + prefix + notes.slice(lineStart);
+    setNotes(newValue);
+    const newPos = start + prefix.length;
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }
+
+  // Madde/numara işaretiyle başlayan bir satırda Enter'a basınca listeyi
+  // otomatik sürdürür; boş bir madde satırında Enter listeyi sonlandırır.
+  function handleNotesKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== "Enter") return;
+    const textarea = e.currentTarget;
+    const start = textarea.selectionStart;
+    if (start !== textarea.selectionEnd) return;
+    const lineStart = notes.lastIndexOf("\n", start - 1) + 1;
+    const line = notes.slice(lineStart, start);
+    const bulletMatch = line.match(/^(\s*)• /);
+    const numberMatch = line.match(/^(\s*)(\d+)\. /);
+    const match = bulletMatch ?? numberMatch;
+    if (!match) return;
+    e.preventDefault();
+    const content = line.slice(match[0].length);
+    if (content.trim() === "") {
+      const newValue = notes.slice(0, lineStart) + notes.slice(start);
+      setNotes(newValue);
+      requestAnimationFrame(() => textarea.setSelectionRange(lineStart, lineStart));
+      return;
+    }
+    const nextPrefix = bulletMatch
+      ? `${bulletMatch[1]}• `
+      : `${numberMatch![1]}${parseInt(numberMatch![2], 10) + 1}. `;
+    const insert = `\n${nextPrefix}`;
+    const newValue = notes.slice(0, start) + insert + notes.slice(start);
+    setNotes(newValue);
+    const newPos = start + insert.length;
+    requestAnimationFrame(() => textarea.setSelectionRange(newPos, newPos));
+  }
+
   return (
     <div className="fixed inset-x-0 top-0 z-50 flex h-dvh items-end justify-center bg-black/40 p-0 backdrop-blur-sm md:items-center md:p-4">
-      <div className="max-h-[85dvh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-[var(--surface)] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl backdrop-saturate-150 md:rounded-2xl md:pb-5">
+      <div className="max-h-[92dvh] w-full max-w-xl overflow-y-auto rounded-t-2xl bg-[var(--surface)] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl backdrop-saturate-150 md:rounded-2xl md:pb-5">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-base text-[var(--foreground)]">
             Eylemi düzenle
@@ -193,19 +248,39 @@ export function NodeEditPanel({
           </p>
         </div>
 
-        <label className="mt-4 block text-xs font-medium text-[var(--muted)]">
-          Read me{" "}
-          <span className="font-normal text-[var(--muted)] opacity-70">
-            (her gün hatırlaman gereken şeyler)
-          </span>
+        <div className="mt-4">
+          <label className="block text-xs font-medium text-[var(--muted)]">
+            Read me{" "}
+            <span className="font-normal text-[var(--muted)] opacity-70">
+              (her gün hatırlaman gereken şeyler)
+            </span>
+          </label>
+          <div className="mt-1.5 flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => insertListPrefix("bullet")}
+              className="rounded-lg border border-[var(--border-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
+            >
+              • Madde
+            </button>
+            <button
+              type="button"
+              onClick={() => insertListPrefix("number")}
+              className="rounded-lg border border-[var(--border-subtle)] px-2.5 py-1 text-xs font-medium text-[var(--muted)] hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
+            >
+              1. Numara
+            </button>
+          </div>
           <textarea
+            ref={notesRef}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            rows={4}
+            onKeyDown={handleNotesKeyDown}
+            rows={10}
             placeholder="Örn. neden yaptığını, nasıl yapman gerektiğini ya da kendine bir notu buraya yaz…"
-            className="mt-1 w-full resize-none rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
+            className="mt-1.5 w-full resize-y rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2.5 text-sm leading-relaxed text-[var(--foreground)] focus:border-[var(--compass)] focus:outline-none focus:ring-2 focus:ring-[var(--compass)]/25"
           />
-        </label>
+        </div>
 
         <div className="mt-6 flex justify-end gap-2">
           <button
