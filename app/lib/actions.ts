@@ -281,11 +281,14 @@ export async function moveNodeToAgenda(
     });
     const count = await prisma.weekNode.count({ where: { weekId: week.id } });
     if (removedEarlier) {
+      // includedOn'a dokunmuyoruz: bu satır zaten bu haftaya ait, orijinal
+      // dahil edilme tarihini bugüne sıfırlarsak (yanlışlıkla durdurulup
+      // hemen geri alınan bir eylemde) haftanın önceki günleri "uygulanamaz"
+      // görünür hale gelip işaretlenemez oluyordu.
       await prisma.weekNode.update({
         where: { id: removedEarlier.id },
         data: {
           categorySnapshot: category,
-          includedOn: isoToUTCDate(todayISO),
           removedOn: null,
           sortOrder: count,
         },
