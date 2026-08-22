@@ -21,7 +21,7 @@ import {
   updateNode,
 } from "@/app/lib/actions";
 import { getWeekStart, toISODate } from "@/app/lib/dates";
-import { CATEGORY_THEME } from "@/app/lib/colors";
+import { BOARD_STYLE_KEY, getBoardStyle, type BoardStyle } from "@/app/lib/prefs";
 import {
   KANBAN_STATUS_LABELS,
   KANBAN_STATUS_ORDER,
@@ -31,31 +31,26 @@ import {
 } from "@/app/lib/types";
 import { NodeEditPanel } from "@/app/components/NodeEditPanel";
 
-// El yazısı marker hissi: fiziksel beyaz tahtadaki post-it panosunun dijital
-// karşılığı. Türkçe karakterler için latin-ext gerekli.
+// "Sticky" moddaki el yazısı hissi için. Türkçe karakterler için latin-ext gerekli.
 const kalam = Kalam({ subsets: ["latin", "latin-ext"], weight: ["400", "700"] });
 
-const COLUMN_HINTS: Record<ExternalStatus, string> = {
-  inbox: "Henüz karar verilmedi",
-  on_agenda: "Bu hafta aktif takipte",
-  not_now: "Açık ama duraklatıldı",
-  closed: "Döngüden çıkarıldı",
+const INK = "#20202a";
+const INK_MUTED = "rgba(32,32,42,0.62)";
+
+// Sütun zemin rengi — dış duruma göre (kullanıcının Canva panosuyla birebir).
+const COLUMN_BG: Record<ExternalStatus, string> = {
+  inbox: "#d6d6da",
+  on_agenda: "#9ec2fb",
+  not_now: "#ddc9f7",
+  closed: "#a3e6c1",
 };
 
-// Fiziksel panodaki elle çizilmiş, hafif eğri dikdörtgen çerçeve hissi —
-// sütun başına sabit (render'da zıplamasın diye), asimetrik border-radius +
-// hafif döndürme ile taklit edilir.
-const COLUMN_SKETCH: Record<ExternalStatus, string> = {
-  inbox: "22px 8px 20px 10px / 10px 20px 8px 22px",
-  on_agenda: "10px 22px 10px 24px / 22px 10px 24px 10px",
-  not_now: "24px 10px 18px 12px / 12px 24px 10px 18px",
-  closed: "12px 20px 14px 22px / 20px 12px 22px 14px",
-};
-const COLUMN_TILT: Record<ExternalStatus, string> = {
-  inbox: "rotate-[-0.35deg]",
-  on_agenda: "rotate-[0.3deg]",
-  not_now: "rotate-[-0.25deg]",
-  closed: "rotate-[0.4deg]",
+// Not rengi — iç kategoriye göre (kullanıcının Canva panosuyla birebir).
+const CATEGORY_CARD_BG: Record<Category, string> = {
+  companion: "#c9adf7",
+  multi: "#ffe066",
+  active: "#ff9db0",
+  passive: "#7fe3ac",
 };
 
 /** Post-it'in kart id'sine göre sabit, tekrar üretilebilir hafif eğimi —
@@ -66,17 +61,16 @@ function noteRotation(id: string): number {
   return ((Math.abs(h) % 700) / 100) * (h % 2 === 0 ? 1 : -1) - 3.5;
 }
 
-const NOTE_BG =
-  "linear-gradient(160deg, #eef97a 0%, #d7e34a 55%, #c7d43a 100%)";
-
 function BoardCard({
   node,
   busy,
+  sticky,
   onMove,
   onEdit,
 }: {
   node: NodeDTO;
   busy: boolean;
+  sticky: boolean;
   onMove: (status: ExternalStatus) => void;
   onEdit: () => void;
 }) {
@@ -84,64 +78,80 @@ function BoardCard({
     id: `board-card-${node.id}`,
     data: { nodeId: node.id, status: node.externalStatus, title: node.title },
   });
-  const theme = CATEGORY_THEME[node.category];
   const otherStatuses = KANBAN_STATUS_ORDER.filter((s) => s !== node.externalStatus);
-  const rotation = noteRotation(node.id);
+  const rotation = sticky ? noteRotation(node.id) : 0;
 
   return (
     <li
       ref={setNodeRef}
       style={{
-        background: NOTE_BG,
+        background: CATEGORY_CARD_BG[node.category],
+        color: INK,
         transform: isDragging ? "rotate(0deg) scale(1.05)" : `rotate(${rotation}deg)`,
       }}
-      className={`group relative min-h-[6.5rem] rounded-[3px] p-2.5 pt-4 shadow-[2px_4px_10px_rgba(0,0,0,0.35)] transition-transform hover:z-10 hover:-translate-y-0.5 ${
-        isDragging ? "z-50 opacity-90 shadow-[4px_10px_22px_rgba(0,0,0,0.5)]" : ""
-      }`}
+      className={`group relative rounded-lg p-2 text-xs shadow-sm transition-shadow hover:z-10 hover:shadow-md ${
+        sticky ? "pt-4" : ""
+      } ${isDragging ? "z-50 opacity-90 shadow-lg" : ""}`}
     >
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        className="absolute -top-2 left-1/2 -translate-x-1/2 cursor-grab touch-none text-base leading-none opacity-80 active:cursor-grabbing"
-        aria-label="Sürükle"
-        title="Sürükleyerek taşı"
-      >
-        📌
-      </button>
+      {sticky ? (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="absolute -top-2 left-1/2 -translate-x-1/2 cursor-grab touch-none text-sm leading-none opacity-80 active:cursor-grabbing"
+          aria-label="Sürükle"
+          title="Sürükleyerek taşı"
+        >
+          📌
+        </button>
+      ) : null}
 
-      <button
-        type="button"
-        onClick={onEdit}
-        className={`${kalam.className} block w-full text-left text-[15px] font-bold leading-tight text-[#1f2410] hover:underline`}
-      >
-        {node.externalStatus === "on_agenda" && (
-          <span className={`mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${theme.dot}`} aria-hidden />
+      <div className="flex items-start gap-1">
+        {!sticky && (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="mt-0.5 shrink-0 cursor-grab touch-none px-0.5 opacity-40 active:cursor-grabbing"
+            aria-label="Sürükle"
+            title="Sürükleyerek taşı"
+          >
+            ⠿
+          </button>
         )}
-        {node.title}
-      </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className={`min-w-0 flex-1 text-left font-bold uppercase leading-tight hover:underline ${
+            sticky ? kalam.className : ""
+          }`}
+        >
+          {node.title}
+        </button>
+      </div>
 
       {node.tags.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
+        <div className={`mt-1 flex flex-wrap gap-1 ${sticky ? "" : "pl-4"}`}>
           {node.tags.map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full bg-black/10 px-1.5 py-0.5 text-[9px] font-medium text-[#1f2410]/70"
-            >
+            <span key={tag} className="rounded-full bg-black/10 px-1.5 py-0.5 text-[9px] font-medium">
               {tag}
             </span>
           ))}
         </div>
       )}
 
-      <div className="mt-2 flex flex-wrap gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <div
+        className={`mt-1.5 flex flex-wrap gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${
+          sticky ? "" : "pl-4"
+        }`}
+      >
         {otherStatuses.map((s) => (
           <button
             key={s}
             type="button"
             disabled={busy}
             onClick={() => onMove(s)}
-            className="rounded-full bg-black/15 px-1.5 py-0.5 text-[9px] font-semibold text-[#1f2410] hover:bg-black/25 disabled:opacity-40"
+            className="rounded-full bg-black/15 px-1.5 py-0.5 text-[9px] font-semibold hover:bg-black/25 disabled:opacity-40"
           >
             → {KANBAN_STATUS_LABELS[s]}
           </button>
@@ -155,44 +165,49 @@ function BoardColumn({
   status,
   nodes,
   busy,
+  sticky,
   onMove,
   onEdit,
 }: {
   status: ExternalStatus;
   nodes: NodeDTO[];
   busy: boolean;
+  sticky: boolean;
   onMove: (nodeId: string, status: ExternalStatus) => void;
   onEdit: (nodeId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `board-col-${status}` });
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{ borderRadius: COLUMN_SKETCH[status] }}
-      className={`flex min-w-[80%] shrink-0 snap-start flex-col border-2 p-3 pt-2.5 transition-colors sm:min-w-0 sm:shrink ${
-        COLUMN_TILT[status]
-      } ${isOver ? "border-[var(--foreground)] bg-white/[0.04]" : "border-[var(--border-strong)]"}`}
-    >
-      <h2 className="flex items-baseline justify-between px-1">
-        <span className={`${kalam.className} text-xl font-bold tracking-wide text-[var(--foreground)]`}>
-          {KANBAN_STATUS_LABELS[status]}
-        </span>
-        <span className="text-xs tabular-nums text-[var(--muted)]">{nodes.length}</span>
+    <div className="flex w-[85vw] shrink-0 snap-start flex-col sm:w-auto sm:shrink">
+      <h2 className="mb-2 px-1 font-display text-sm font-extrabold uppercase tracking-wide text-[var(--foreground)]">
+        {KANBAN_STATUS_LABELS[status]} <span className="font-normal text-[var(--muted)]">({nodes.length})</span>
       </h2>
-      <p className="px-1 text-[11px] text-[var(--muted)] opacity-70">{COLUMN_HINTS[status]}</p>
 
-      <ul className="mt-3 grid min-h-[4rem] flex-1 grid-cols-2 content-start gap-x-2.5 gap-y-4">
+      <div
+        ref={setNodeRef}
+        style={{ background: COLUMN_BG[status], outline: isOver ? `2px solid ${INK}` : "none" }}
+        className="min-h-[16rem] flex-1 rounded-2xl p-3 transition-shadow"
+      >
         {nodes.length === 0 ? (
-          <li className="col-span-2 px-1 text-xs text-[var(--muted)] opacity-60">
+          <p className="px-1 text-xs" style={{ color: INK_MUTED }}>
             {isOver ? "Buraya bırak" : "—"}
-          </li>
+          </p>
         ) : (
-          nodes.map((n) => (
-            <BoardCard key={n.id} node={n} busy={busy} onMove={(s) => onMove(n.id, s)} onEdit={() => onEdit(n.id)} />
-          ))
+          <ul className="grid grid-cols-2 content-start gap-2">
+            {nodes.map((n) => (
+              <BoardCard
+                key={n.id}
+                node={n}
+                busy={busy}
+                sticky={sticky}
+                onMove={(s) => onMove(n.id, s)}
+                onEdit={() => onEdit(n.id)}
+              />
+            ))}
+          </ul>
         )}
-      </ul>
+      </div>
     </div>
   );
 }
@@ -203,8 +218,10 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
-  const [activeDragTitle, setActiveDragTitle] = useState<string | null>(null);
+  const [activeDragTitle, setActiveDragTitle] = useState<{ title: string; category: Category } | null>(null);
   const [dates, setDates] = useState<{ todayISO: string; weekStartISO: string; weekEndISO: string } | null>(null);
+  const [boardStyle, setBoardStyleState] = useState<BoardStyle>("flat");
+  const sticky = boardStyle === "sticky";
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -214,6 +231,7 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
     const end = new Date(start);
     end.setDate(end.getDate() + 6);
     setDates({ todayISO: toISODate(now), weekStartISO: toISODate(start), weekEndISO: toISODate(end) });
+    setBoardStyleState(getBoardStyle());
   }, []);
 
   useEffect(() => {
@@ -221,6 +239,12 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
     const t = setTimeout(() => setNotice(null), 3000);
     return () => clearTimeout(t);
   }, [notice]);
+
+  function toggleBoardStyle() {
+    const next: BoardStyle = sticky ? "flat" : "sticky";
+    setBoardStyleState(next);
+    window.localStorage.setItem(BOARD_STYLE_KEY, next);
+  }
 
   const columns = useMemo(() => {
     const map: Record<ExternalStatus, NodeDTO[]> = { inbox: [], on_agenda: [], not_now: [], closed: [] };
@@ -267,8 +291,9 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
   }
 
   function handleDragStart(event: DragStartEvent) {
-    const data = event.active.data.current as { title?: string } | undefined;
-    setActiveDragTitle(data?.title ?? null);
+    const data = event.active.data.current as { title?: string; nodeId?: string } | undefined;
+    const node = nodes.find((n) => n.id === data?.nodeId);
+    setActiveDragTitle(data?.title && node ? { title: data.title, category: node.category } : null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -327,11 +352,28 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
           <div className="mb-3 rounded-lg bg-[var(--route-soft)] px-3 py-2 text-xs text-[var(--route)]">{notice}</div>
         )}
 
-        <h1 className="font-display text-lg text-[var(--foreground)]">Pano</h1>
-        <p className="mt-1 text-xs text-[var(--muted)]">
-          Dış durum kodlarının kanban görünümü — kafandaki gündemi tek bakışta gör. Notları sürükleyerek ya da
-          üzerine gelince çıkan hızlı butonlarla sütunlar arasında taşı; Eylem Yönetim Paneli ile aynı veriyi kullanır.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="font-display text-lg text-[var(--foreground)]">Pano</h1>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Dış durum kodlarının kanban görünümü — sütun dış durumu, not rengi iç kategoriyi gösterir. Notları
+              sürükleyerek ya da üzerine gelince çıkan hızlı butonlarla sütunlar arasında taşı; Eylem Yönetim Paneli
+              ile aynı veriyi kullanır.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleBoardStyle}
+            aria-pressed={sticky}
+            className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+              sticky
+                ? "border-transparent bg-[var(--foreground)] text-[var(--invert)]"
+                : "border-[var(--border-subtle)] text-[var(--muted)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            📌 Post-it hissi
+          </button>
+        </div>
 
         <form
           onSubmit={(e) => {
@@ -343,7 +385,7 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Yeni eylem adı… (NOT NOW'a düşer)"
+            placeholder="Yeni eylem adı… (Gelen Kutusu'na düşer)"
             className="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--foreground)]"
           />
           <button
@@ -362,6 +404,7 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
               status={status}
               nodes={columns[status]}
               busy={busy}
+              sticky={sticky}
               onMove={handleMoveToStatus}
               onEdit={(nodeId) => setEditingNodeId(nodeId)}
             />
@@ -376,10 +419,10 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
       <DragOverlay>
         {activeDragTitle && (
           <div
-            style={{ background: NOTE_BG }}
-            className={`${kalam.className} rounded-[3px] px-3 py-2.5 text-[15px] font-bold text-[#1f2410] shadow-[4px_10px_22px_rgba(0,0,0,0.5)]`}
+            style={{ background: CATEGORY_CARD_BG[activeDragTitle.category], color: INK }}
+            className={`rounded-lg px-3 py-2 text-xs font-bold uppercase shadow-lg ${sticky ? kalam.className : ""}`}
           >
-            {activeDragTitle}
+            {activeDragTitle.title}
           </div>
         )}
       </DragOverlay>
