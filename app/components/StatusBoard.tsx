@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Kalam } from "next/font/google";
 import {
   DndContext,
@@ -21,7 +21,17 @@ import {
   updateNode,
 } from "@/app/lib/actions";
 import { getWeekStart, toISODate } from "@/app/lib/dates";
-import { BOARD_STYLE_KEY, getBoardStyle, type BoardStyle } from "@/app/lib/prefs";
+import {
+  getBoardColumnSizes,
+  getBoardPositions,
+  getBoardStyle,
+  setBoardColumnSize,
+  setBoardPosition,
+  BOARD_STYLE_KEY,
+  type BoardColumnSize,
+  type BoardPosition,
+  type BoardStyle,
+} from "@/app/lib/prefs";
 import {
   KANBAN_STATUS_LABELS,
   KANBAN_STATUS_ORDER,
@@ -36,6 +46,20 @@ const kalam = Kalam({ subsets: ["latin", "latin-ext"], weight: ["400", "700"] })
 
 const INK = "#20202a";
 const INK_MUTED = "rgba(32,32,42,0.62)";
+
+// Notların varsayılan (hiç sürüklenmemiş) yerleşimi — eski 2 sütunlu ızgarayla
+// aynı görünümü verir, ama artık yalnızca bir başlangıç noktası: sürükleyince
+// serbestçe her yere bırakılabilir.
+const CARD_WIDTH = 136;
+const CELL_W = 148;
+const CELL_H = 96;
+const COLUMN_PADDING = 12;
+const DEFAULT_COLUMN_WIDTH = 300;
+const DEFAULT_COLUMN_HEIGHT = 340;
+
+function defaultCardPosition(index: number): BoardPosition {
+  return { x: (index % 2) * CELL_W, y: Math.floor(index / 2) * CELL_H };
+}
 
 // Sütun zemin rengi — dış duruma göre (kullanıcının Canva panosuyla birebir).
 const COLUMN_BG: Record<ExternalStatus, string> = {
@@ -63,12 +87,14 @@ function noteRotation(id: string): number {
 
 function BoardCard({
   node,
+  position,
   busy,
   sticky,
   onMove,
   onEdit,
 }: {
   node: NodeDTO;
+  position: BoardPosition;
   busy: boolean;
   sticky: boolean;
   onMove: (status: ExternalStatus) => void;
@@ -85,11 +111,15 @@ function BoardCard({
     <li
       ref={setNodeRef}
       style={{
+        position: "absolute",
+        left: position.x,
+        top: position.y,
+        width: CARD_WIDTH,
         background: CATEGORY_CARD_BG[node.category],
         color: INK,
         transform: isDragging ? "rotate(0deg) scale(1.05)" : `rotate(${rotation}deg)`,
       }}
-      className={`group relative rounded-lg p-2 text-xs shadow-sm transition-shadow hover:z-10 hover:shadow-md ${
+      className={`group rounded-lg p-2 text-xs shadow-sm transition-shadow hover:z-10 hover:shadow-md ${
         sticky ? "pt-4" : ""
       } ${isDragging ? "z-50 opacity-90 shadow-lg" : ""}`}
     >
@@ -164,41 +194,80 @@ function BoardCard({
 function BoardColumn({
   status,
   nodes,
+  positions,
   busy,
   sticky,
+  initialSize,
   onMove,
   onEdit,
 }: {
   status: ExternalStatus;
   nodes: NodeDTO[];
+  positions: Record<string, BoardPosition>;
   busy: boolean;
   sticky: boolean;
+  initialSize: BoardColumnSize | undefined;
   onMove: (nodeId: string, status: ExternalStatus) => void;
   onEdit: (nodeId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `board-col-${status}` });
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState<BoardColumnSize>(
+    initialSize ?? { width: DEFAULT_COLUMN_WIDTH, height: DEFAULT_COLUMN_HEIGHT }
+  );
+
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      // entry.contentRect padding hariç iç kutuyu verir; style.width ise
+      // (border-box) padding dahil dış kutuyu temsil eder — offsetWidth/
+      // offsetHeight kullanmak bu birim uyuşmazlığını (ve her seferinde
+      // padding kadar küçülen geri besleme döngüsünü) önler.
+      const next = { width: el.offsetWidth, height: el.offsetHeight };
+      setSize((prev) => {
+        if (Math.abs(prev.width - next.width) < 2 && Math.abs(prev.height - next.height) < 2) return prev;
+        setBoardColumnSize(status, next);
+        return next;
+      });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [status]);
 
   return (
-    <div className="flex w-[85vw] shrink-0 snap-start flex-col sm:w-auto sm:shrink">
+    <div className="flex shrink-0 snap-start flex-col items-start">
       <h2 className="mb-2 px-1 font-display text-sm font-extrabold uppercase tracking-wide text-[var(--foreground)]">
         {KANBAN_STATUS_LABELS[status]} <span className="font-normal text-[var(--muted)]">({nodes.length})</span>
       </h2>
 
       <div
-        ref={setNodeRef}
-        style={{ background: COLUMN_BG[status], outline: isOver ? `2px solid ${INK}` : "none" }}
-        className="min-h-[16rem] flex-1 rounded-2xl p-3 transition-shadow"
+        ref={(el) => {
+          boxRef.current = el;
+          setNodeRef(el);
+        }}
+        style={{
+          background: COLUMN_BG[status],
+          outline: isOver ? `2px solid ${INK}` : "none",
+          width: size.width,
+          height: size.height,
+          minWidth: 180,
+          minHeight: 160,
+          maxWidth: "85vw",
+        }}
+        className="relative resize-none overflow-auto rounded-2xl p-3 transition-shadow sm:resize"
       >
         {nodes.length === 0 ? (
           <p className="px-1 text-xs" style={{ color: INK_MUTED }}>
             {isOver ? "Buraya bırak" : "—"}
           </p>
         ) : (
-          <ul className="grid grid-cols-2 content-start gap-2">
-            {nodes.map((n) => (
+          <ul className="relative">
+            {nodes.map((n, i) => (
               <BoardCard
                 key={n.id}
                 node={n}
+                position={positions[n.id] ?? defaultCardPosition(i)}
                 busy={busy}
                 sticky={sticky}
                 onMove={(s) => onMove(n.id, s)}
@@ -221,6 +290,8 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
   const [activeDragTitle, setActiveDragTitle] = useState<{ title: string; category: Category } | null>(null);
   const [dates, setDates] = useState<{ todayISO: string; weekStartISO: string; weekEndISO: string } | null>(null);
   const [boardStyle, setBoardStyleState] = useState<BoardStyle>("flat");
+  const [positions, setPositions] = useState<Record<string, BoardPosition>>({});
+  const [columnSizes, setColumnSizes] = useState<Record<string, BoardColumnSize>>({});
   const sticky = boardStyle === "sticky";
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -232,6 +303,8 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
     end.setDate(end.getDate() + 6);
     setDates({ todayISO: toISODate(now), weekStartISO: toISODate(start), weekEndISO: toISODate(end) });
     setBoardStyleState(getBoardStyle());
+    setPositions(getBoardPositions());
+    setColumnSizes(getBoardColumnSizes());
   }, []);
 
   useEffect(() => {
@@ -305,8 +378,24 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
     const overId = String(over.id);
     if (!overId.startsWith("board-col-")) return;
     const targetStatus = overId.slice("board-col-".length) as ExternalStatus;
-    if (targetStatus === data.status) return;
-    handleMoveToStatus(data.nodeId, targetStatus);
+
+    // Bırakılan sütunun (hedef sütun aynı ya da farklı olabilir) sol-üst
+    // köşesine göre serbest konumu hesapla — sürükle-bırak hem konumu hem
+    // (sütun değiştiyse) dış durumu tek hareketle günceller.
+    const overRect = over.rect;
+    const activeRect = active.rect.current.translated ?? active.rect.current.initial;
+    if (overRect && activeRect) {
+      const nextPos: BoardPosition = {
+        x: Math.max(0, Math.round(activeRect.left - overRect.left - COLUMN_PADDING)),
+        y: Math.max(0, Math.round(activeRect.top - overRect.top - COLUMN_PADDING)),
+      };
+      setPositions((prev) => ({ ...prev, [data.nodeId]: nextPos }));
+      setBoardPosition(data.nodeId, nextPos);
+    }
+
+    if (targetStatus !== data.status) {
+      handleMoveToStatus(data.nodeId, targetStatus);
+    }
   }
 
   const editingNode = nodes.find((n) => n.id === editingNodeId) ?? null;
@@ -357,8 +446,8 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
             <h1 className="font-display text-lg text-[var(--foreground)]">Pano</h1>
             <p className="mt-1 text-xs text-[var(--muted)]">
               Dış durum kodlarının kanban görünümü — sütun dış durumu, not rengi iç kategoriyi gösterir. Notları
-              sürükleyerek ya da üzerine gelince çıkan hızlı butonlarla sütunlar arasında taşı; Eylem Yönetim Paneli
-              ile aynı veriyi kullanır.
+              serbestçe istediğin yere sürükleyebilir, sütunun sağ-alt köşesinden boyutunu değiştirebilirsin;
+              Eylem Yönetim Paneli ile aynı veriyi kullanır.
             </p>
           </div>
           <button
@@ -397,14 +486,19 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
           </button>
         </form>
 
-        <div className="mt-5 flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory sm:grid sm:grid-cols-4 sm:overflow-visible sm:pb-0">
-          {KANBAN_STATUS_ORDER.map((status) => (
+        <div className="mt-5 flex items-start gap-4 overflow-x-auto pb-2 snap-x snap-mandatory sm:snap-none">
+          {/* Sütunlar, kaydedilmiş boyut/konum localStorage'dan okunana kadar
+              (dates hazır olana kadar) render edilmez — aksi halde BoardColumn
+              kendi başlangıç boyutunu "henüz gelmemiş" prop ile kilitlerdi. */}
+          {dates && KANBAN_STATUS_ORDER.map((status) => (
             <BoardColumn
               key={status}
               status={status}
               nodes={columns[status]}
+              positions={positions}
               busy={busy}
               sticky={sticky}
+              initialSize={columnSizes[status]}
               onMove={handleMoveToStatus}
               onEdit={(nodeId) => setEditingNodeId(nodeId)}
             />
@@ -419,7 +513,7 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
       <DragOverlay>
         {activeDragTitle && (
           <div
-            style={{ background: CATEGORY_CARD_BG[activeDragTitle.category], color: INK }}
+            style={{ background: CATEGORY_CARD_BG[activeDragTitle.category], color: INK, width: CARD_WIDTH }}
             className={`rounded-lg px-3 py-2 text-xs font-bold uppercase shadow-lg ${sticky ? kalam.className : ""}`}
           >
             {activeDragTitle.title}

@@ -34,3 +34,47 @@ export function getBoardStyle(): BoardStyle {
   const stored = window.localStorage.getItem(BOARD_STYLE_KEY);
   return stored === "flat" || stored === "sticky" ? stored : BOARD_STYLE_DEFAULT;
 }
+
+/** Pano'daki notların sütun içi serbest konumu (px, sütunun sol-üst köşesine
+ * göre) ve sütun kutularının elle ayarlanan boyutu. Cihaza özel bir görünüm
+ * tercihidir (Node veritabanı kaydını etkilemez), bu yüzden localStorage'da
+ * tutulur — sunucuya taşınmaz, cihazlar arası senkron olmaz. */
+export type BoardPosition = { x: number; y: number };
+const BOARD_POSITIONS_KEY = "tracker_board_positions";
+
+export function getBoardPositions(): Record<string, BoardPosition> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(BOARD_POSITIONS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function setBoardPosition(nodeId: string, pos: BoardPosition) {
+  if (typeof window === "undefined") return;
+  const all = getBoardPositions();
+  all[nodeId] = pos;
+  window.localStorage.setItem(BOARD_POSITIONS_KEY, JSON.stringify(all));
+}
+
+export type BoardColumnSize = { width: number; height: number };
+const BOARD_COLUMN_SIZES_KEY = "tracker_board_column_sizes";
+
+export function getBoardColumnSizes(): Record<string, BoardColumnSize> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(BOARD_COLUMN_SIZES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function setBoardColumnSize(status: string, size: BoardColumnSize) {
+  if (typeof window === "undefined") return;
+  const all = getBoardColumnSizes();
+  all[status] = size;
+  window.localStorage.setItem(BOARD_COLUMN_SIZES_KEY, JSON.stringify(all));
+}
