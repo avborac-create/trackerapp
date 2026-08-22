@@ -188,6 +188,14 @@ export async function getInboxNodes(): Promise<NodeDTO[]> {
   return nodes.map(toNodeDTO);
 }
 
+/** Durum kanbanı (Pano) için dört dış durumdaki tüm eylemler. */
+export async function getAllNodesAction(): Promise<NodeDTO[]> {
+  const nodes = await prisma.node.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+  return nodes.map(toNodeDTO);
+}
+
 export async function addNode(title: string): Promise<NodeDTO> {
   const trimmed = title.trim();
   if (!trimmed) throw new Error("Ad boş olamaz.");

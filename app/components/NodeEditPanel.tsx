@@ -11,7 +11,7 @@ import {
   type NodeDTO,
 } from "@/app/lib/types";
 
-const STATUS_ORDER: ExternalStatus[] = ["inbox", "on_agenda", "closed"];
+const STATUS_ORDER: ExternalStatus[] = ["inbox", "not_now", "on_agenda", "closed"];
 
 export function NodeEditPanel({
   node,
