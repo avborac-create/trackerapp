@@ -88,28 +88,30 @@ function noteRotation(id: string): number {
 function BoardCard({
   node,
   position,
-  busy,
   sticky,
-  onMove,
   onEdit,
 }: {
   node: NodeDTO;
   position: BoardPosition;
-  busy: boolean;
   sticky: boolean;
-  onMove: (status: ExternalStatus) => void;
   onEdit: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `board-card-${node.id}`,
     data: { nodeId: node.id, status: node.externalStatus, title: node.title },
   });
-  const otherStatuses = KANBAN_STATUS_ORDER.filter((s) => s !== node.externalStatus);
   const rotation = sticky ? noteRotation(node.id) : 0;
 
+  // Canva'daki gibi: not kağıdının HERHANGİ bir noktasından tutup sürükle;
+  // dnd-kit'in aktivasyon mesafesi (8px) aşılmadan bırakılan bir tıklama,
+  // sürükleme başlatmadan normal onClick olarak geçer — bu yüzden ayrı bir
+  // tutamaç ikonuna gerek yok, aynı öğe hem sürüklenebilir hem tıklanabilir.
   return (
     <li
       ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={onEdit}
       style={{
         position: "absolute",
         left: position.x,
@@ -119,49 +121,23 @@ function BoardCard({
         color: INK,
         transform: isDragging ? "rotate(0deg) scale(1.05)" : `rotate(${rotation}deg)`,
       }}
-      className={`group rounded-lg p-2 text-xs shadow-sm transition-shadow hover:z-10 hover:shadow-md ${
+      className={`cursor-grab touch-none rounded-lg p-2 text-xs shadow-sm transition-shadow hover:z-10 hover:shadow-md active:cursor-grabbing ${
         sticky ? "pt-4" : ""
       } ${isDragging ? "z-50 opacity-90 shadow-lg" : ""}`}
     >
-      {sticky ? (
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="absolute -top-2 left-1/2 -translate-x-1/2 cursor-grab touch-none text-sm leading-none opacity-80 active:cursor-grabbing"
-          aria-label="Sürükle"
-          title="Sürükleyerek taşı"
+      {sticky && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-2 left-1/2 -translate-x-1/2 text-sm leading-none opacity-80"
         >
           📌
-        </button>
-      ) : null}
+        </span>
+      )}
 
-      <div className="flex items-start gap-1">
-        {!sticky && (
-          <button
-            type="button"
-            {...attributes}
-            {...listeners}
-            className="mt-0.5 shrink-0 cursor-grab touch-none px-0.5 opacity-40 active:cursor-grabbing"
-            aria-label="Sürükle"
-            title="Sürükleyerek taşı"
-          >
-            ⠿
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onEdit}
-          className={`min-w-0 flex-1 text-left font-bold uppercase leading-tight hover:underline ${
-            sticky ? kalam.className : ""
-          }`}
-        >
-          {node.title}
-        </button>
-      </div>
+      <p className={`font-bold uppercase leading-tight ${sticky ? kalam.className : ""}`}>{node.title}</p>
 
       {node.tags.length > 0 && (
-        <div className={`mt-1 flex flex-wrap gap-1 ${sticky ? "" : "pl-4"}`}>
+        <div className="mt-1 flex flex-wrap gap-1">
           {node.tags.map((tag) => (
             <span key={tag} className="rounded-full bg-black/10 px-1.5 py-0.5 text-[9px] font-medium">
               {tag}
@@ -169,24 +145,6 @@ function BoardCard({
           ))}
         </div>
       )}
-
-      <div
-        className={`mt-1.5 flex flex-wrap gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 ${
-          sticky ? "" : "pl-4"
-        }`}
-      >
-        {otherStatuses.map((s) => (
-          <button
-            key={s}
-            type="button"
-            disabled={busy}
-            onClick={() => onMove(s)}
-            className="rounded-full bg-black/15 px-1.5 py-0.5 text-[9px] font-semibold hover:bg-black/25 disabled:opacity-40"
-          >
-            → {KANBAN_STATUS_LABELS[s]}
-          </button>
-        ))}
-      </div>
     </li>
   );
 }
@@ -195,19 +153,15 @@ function BoardColumn({
   status,
   nodes,
   positions,
-  busy,
   sticky,
   initialSize,
-  onMove,
   onEdit,
 }: {
   status: ExternalStatus;
   nodes: NodeDTO[];
   positions: Record<string, BoardPosition>;
-  busy: boolean;
   sticky: boolean;
   initialSize: BoardColumnSize | undefined;
-  onMove: (nodeId: string, status: ExternalStatus) => void;
   onEdit: (nodeId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `board-col-${status}` });
@@ -255,7 +209,7 @@ function BoardColumn({
           minHeight: 160,
           maxWidth: "85vw",
         }}
-        className="relative resize-none overflow-auto rounded-2xl p-3 transition-shadow sm:resize"
+        className="scrollbar-apple relative resize-none overflow-auto rounded-2xl p-3 transition-shadow sm:resize"
       >
         {nodes.length === 0 ? (
           <p className="px-1 text-xs" style={{ color: INK_MUTED }}>
@@ -268,9 +222,7 @@ function BoardColumn({
                 key={n.id}
                 node={n}
                 position={positions[n.id] ?? defaultCardPosition(i)}
-                busy={busy}
                 sticky={sticky}
-                onMove={(s) => onMove(n.id, s)}
                 onEdit={() => onEdit(n.id)}
               />
             ))}
@@ -486,7 +438,7 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
           </button>
         </form>
 
-        <div className="mt-5 flex items-start gap-4 overflow-x-auto pb-2 snap-x snap-mandatory sm:snap-none">
+        <div className="scrollbar-apple mt-5 flex items-start gap-4 overflow-x-auto pb-2 snap-x snap-mandatory sm:snap-none">
           {/* Sütunlar, kaydedilmiş boyut/konum localStorage'dan okunana kadar
               (dates hazır olana kadar) render edilmez — aksi halde BoardColumn
               kendi başlangıç boyutunu "henüz gelmemiş" prop ile kilitlerdi. */}
@@ -496,10 +448,8 @@ export function StatusBoard({ initialNodes }: { initialNodes: NodeDTO[] }) {
               status={status}
               nodes={columns[status]}
               positions={positions}
-              busy={busy}
               sticky={sticky}
               initialSize={columnSizes[status]}
-              onMove={handleMoveToStatus}
               onEdit={(nodeId) => setEditingNodeId(nodeId)}
             />
           ))}
