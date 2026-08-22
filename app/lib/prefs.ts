@@ -21,3 +21,16 @@ export function getDayBadgeStyle(): DayBadgeStyle {
   const stored = window.localStorage.getItem(DAY_BADGE_KEY);
   return stored === "number" || stored === "corner" ? stored : DAY_BADGE_DEFAULT;
 }
+
+/** Pano (durum kanbanı) kart dokusu: "flat" düz/Canva hissi, "sticky" el
+ * yazısı + hafif döndürülmüş fiziksel post-it hissi. Renkler (kategori/durum)
+ * her iki modda da aynıdır — bu yalnızca doku/tipografi tercihidir. */
+export type BoardStyle = "flat" | "sticky";
+export const BOARD_STYLE_KEY = "tracker_board_style";
+export const BOARD_STYLE_DEFAULT: BoardStyle = "flat";
+
+export function getBoardStyle(): BoardStyle {
+  if (typeof window === "undefined") return BOARD_STYLE_DEFAULT;
+  const stored = window.localStorage.getItem(BOARD_STYLE_KEY);
+  return stored === "flat" || stored === "sticky" ? stored : BOARD_STYLE_DEFAULT;
+}

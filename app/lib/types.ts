@@ -17,6 +17,17 @@ export const STATUS_LABELS: Record<ExternalStatus, string> = {
   closed: "✅ Kapatıldı",
 };
 
+/** Durum kanbanı (Pano) için sütun sırası ve kısa etiketler — mevcut
+ * ExternalStatus değerlerinin üzerine kurulur, şema değişmez. */
+export const KANBAN_STATUS_ORDER: ExternalStatus[] = ["inbox", "on_agenda", "not_now", "closed"];
+
+export const KANBAN_STATUS_LABELS: Record<ExternalStatus, string> = {
+  inbox: "Gelen Kutusu",
+  on_agenda: "Gündem",
+  not_now: "Durduruldu",
+  closed: "Kapatıldı",
+};
+
 export type DailyMarkEntryKind = "success" | "failure";
 
 export interface DayEntry {
